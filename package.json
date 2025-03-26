@@ -1,0 +1,25 @@
+{
+  "name": "com.unity.ai-coding-assistant",
+  "version": "0.1.0",
+  "displayName": "AI Coding Assistant",
+  "description": "A Unity Editor plugin that integrates AI models (Grok, Claude, and local LLMs via Ollama) to assist with coding tasks.",
+  "unity": "2019.4",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.0.2"
+  },
+  "keywords": [
+    "ai",
+    "coding",
+    "assistant",
+    "editor",
+    "tool"
+  ],
+  "author": {
+    "name": "Unity Assistant Team",
+    "email": "support@example.com",
+    "url": "https://github.com/yourusername/unity-ai-coding-assistant"
+  },
+  "documentationUrl": "https://github.com/yourusername/unity-ai-coding-assistant",
+  "changelogUrl": "https://github.com/yourusername/unity-ai-coding-assistant/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/yourusername/unity-ai-coding-assistant/blob/main/LICENSE.md"
+} 
