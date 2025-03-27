@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEditor;
 using Newtonsoft.Json;
 
 namespace AICodingAssistant.AI
@@ -13,8 +14,8 @@ namespace AICodingAssistant.AI
     public class OllamaBackend : AIBackend
     {
         private static readonly HttpClient client = new HttpClient();
-        private readonly string baseUrl;
-        private readonly string modelName;
+        private string baseUrl;
+        private string modelName;
         
         /// <summary>
         /// Create a new OllamaBackend with default settings
@@ -26,14 +27,14 @@ namespace AICodingAssistant.AI
             modelName = "llama2"; // Default model
             
             // Try to load saved settings
-            if (PlayerPrefs.HasKey("OllamaURL"))
+            if (EditorPrefs.HasKey("OllamaURL"))
             {
-                baseUrl = PlayerPrefs.GetString("OllamaURL");
+                baseUrl = EditorPrefs.GetString("OllamaURL");
             }
             
-            if (PlayerPrefs.HasKey("OllamaModel"))
+            if (EditorPrefs.HasKey("OllamaModel"))
             {
-                modelName = PlayerPrefs.GetString("OllamaModel");
+                modelName = EditorPrefs.GetString("OllamaModel");
             }
         }
         
@@ -99,7 +100,7 @@ namespace AICodingAssistant.AI
         public void SetModel(string model)
         {
             modelName = model;
-            PlayerPrefs.SetString("OllamaModel", model);
+            EditorPrefs.SetString("OllamaModel", model);
         }
         
         /// <summary>
@@ -109,7 +110,7 @@ namespace AICodingAssistant.AI
         public void SetServerUrl(string url)
         {
             baseUrl = url;
-            PlayerPrefs.SetString("OllamaURL", url);
+            EditorPrefs.SetString("OllamaURL", url);
         }
     }
     
