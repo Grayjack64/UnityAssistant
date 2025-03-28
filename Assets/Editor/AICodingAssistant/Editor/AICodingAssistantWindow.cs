@@ -860,16 +860,17 @@ namespace AICodingAssistant.Editor
                     Debug.Log($"Detected {failedCommands.Count} failed scene commands");
                     
                     // Add a system message to inform about failed commands
-                    string failureMessage = "❌ **STEP FAILED - DO NOT PROCEED WITH NEXT STEPS**\n\n";
-                    failureMessage += "The following scene command failed:\n\n";
+                    StringBuilder failureMessage = new StringBuilder();
+                    failureMessage.AppendLine("❌ **STEP FAILED - DO NOT PROCEED WITH NEXT STEPS**\n\n");
+                    failureMessage.AppendLine("The following scene command failed:\n\n");
                     foreach (string failure in failedCommands)
                     {
-                        failureMessage += $"- {failure}\n";
+                        failureMessage.AppendLine($"- {failure}");
                     }
-                    failureMessage += "\n**Required action: Stop and troubleshoot this specific issue before proceeding.**\n";
-                    failureMessage += "1. Identify why the command failed (e.g., incorrect path, invalid component name)\n";
-                    failureMessage += "2. Suggest a correction for this specific step\n";
-                    failureMessage += "3. Do not attempt subsequent steps until this issue is resolved\n";
+                    failureMessage.AppendLine("\n**Required action: Stop and troubleshoot this specific issue before proceeding.**\n");
+                    failureMessage.AppendLine("1. Identify why the command failed (e.g., incorrect path, invalid component name)");
+                    failureMessage.AppendLine("2. Suggest a correction for this specific step");
+                    failureMessage.AppendLine("3. Do not attempt subsequent steps until this issue is resolved");
                     
                     // Add specific required actions
                     failureMessage.AppendLine("\n**Required actions:**");
@@ -880,7 +881,7 @@ namespace AICodingAssistant.Editor
                     failureMessage.AppendLine("5. Never ask the user to perform actions like 'attach scripts' or 'add components'");
                     
                     // Add this as a system message that's visible to the AI but not the user
-                    AddSystemMessage(failureMessage);
+                    AddSystemMessage(failureMessage.ToString());
                 }
             }
             
