@@ -1399,7 +1399,7 @@ namespace AICodingAssistant.Editor
             
             // AI Backend Selection
             EditorGUILayout.LabelField("AI Backend Selection", EditorStyles.boldLabel);
-            string[] backendOptions = { "Claude (Anthropic)", "Grok (xAI)", "Local LLM (Ollama)", "Google Gemini" };
+            string[] backendOptions = { "Grok (xAI)", "Claude (Anthropic)", "Local LLM (Ollama)", "Google Gemini" };
             int currentBackendIndex = (int)selectedBackendType;
             int newBackendIndex = EditorGUILayout.Popup("Backend:", currentBackendIndex, backendOptions);
             
@@ -1585,9 +1585,9 @@ namespace AICodingAssistant.Editor
                     geminiApiKey = newGeminiApiKey;
                     
                     // Update the backend
-                    if (currentBackend is GeminiBackend geminiBackend)
+                    if (currentBackend is GeminiBackend geminiBackend1)
                     {
-                        geminiBackend.SetApiKey(geminiApiKey);
+                        geminiBackend1.SetApiKey(geminiApiKey);
                     }
                 }
                 EditorGUILayout.EndHorizontal();
@@ -1597,12 +1597,12 @@ namespace AICodingAssistant.Editor
                 EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
                 
                 // Load model options if they're not loaded yet
-                if (geminiModelOptions.Length == 0 && currentBackend is GeminiBackend geminiBackend)
+                if (geminiModelOptions.Length == 0 && currentBackend is GeminiBackend geminiBackend2)
                 {
-                    geminiModelOptions = geminiBackend.GetModelDisplayNames();
+                    geminiModelOptions = geminiBackend2.GetModelDisplayNames();
                     
                     // Find the current model index
-                    string currentDisplayName = geminiBackend.GetCurrentModelDisplayName();
+                    string currentDisplayName = geminiBackend2.GetCurrentModelDisplayName();
                     selectedGeminiModelIndex = Array.IndexOf(geminiModelOptions, currentDisplayName);
                     if (selectedGeminiModelIndex < 0)
                     {
@@ -1618,11 +1618,11 @@ namespace AICodingAssistant.Editor
                         selectedGeminiModelIndex = newModelIndex;
                         
                         // Update the model
-                        if (currentBackend is GeminiBackend geminiBackend)
+                        if (currentBackend is GeminiBackend geminiBackend3)
                         {
-                            string modelId = geminiBackend.GetModelIdFromDisplayName(geminiModelOptions[selectedGeminiModelIndex]);
+                            string modelId = geminiBackend3.GetModelIdFromDisplayName(geminiModelOptions[selectedGeminiModelIndex]);
                             geminiModel = modelId;
-                            geminiBackend.SetModel(modelId);
+                            geminiBackend3.SetModel(modelId);
                         }
                     }
                 }
