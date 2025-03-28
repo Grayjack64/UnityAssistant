@@ -580,14 +580,19 @@ namespace AICodingAssistant.Editor
             // Add step-by-step verification workflow guidelines
             prompt.AppendLine("When adding components or creating scripts, follow this step-by-step approach:");
             prompt.AppendLine("1. Start by creating a clear plan of action with all the steps needed to accomplish the task");
-            prompt.AppendLine("2. Execute only ONE step at a time (one scene command or one script addition)");
+            prompt.AppendLine("2. Execute only ONE scene command or script addition PER RESPONSE - any additional commands will be ignored");
             prompt.AppendLine("3. After each step, verify it worked correctly by checking the command result");
             prompt.AppendLine("4. Only proceed to the next step after confirming the previous step was successful");
-            prompt.AppendLine("5. If a step fails, troubleshoot that specific issue before attempting to continue");
+            prompt.AppendLine("5. If a step fails, STOP IMMEDIATELY and troubleshoot that specific issue before attempting anything else");
             prompt.AppendLine("6. After component addition, use `scene.components` to verify the component was added correctly");
             prompt.AppendLine("7. For script additions, wait for feedback on whether the script compiled successfully");
+            prompt.AppendLine("8. Don't mention multiple steps in a single response - focus only on the current step");
             prompt.AppendLine();
-
+            
+            prompt.AppendLine("Important: The assistant processes only ONE scene command per response. After executing a command and seeing the result,");
+            prompt.AppendLine("wait for user feedback or send a new response with the next command only if the previous step was successful.");
+            prompt.AppendLine();
+            
             // Add project context information if requested
             if (includeProjectSummary)
             {
@@ -705,31 +710,69 @@ namespace AICodingAssistant.Editor
                 // Extract scene commands from the response using regex
                 var sceneCommandMatches = System.Text.RegularExpressions.Regex.Matches(response, @"`(scene\.[^`]+)`");
                 
+                // Only process the first command to enforce step-by-step approach
+                bool processedCommand = false;
+                List<System.Text.RegularExpressions.Match> additionalCommands = new List<System.Text.RegularExpressions.Match>();
+                
                 foreach (System.Text.RegularExpressions.Match match in sceneCommandMatches)
                 {
-                    string command = match.Groups[1].Value;
-                    string result = ProcessSceneCommand(command);
-                    
-                    // Check if the command failed (result contains "Failed")
-                    bool commandFailed = result.Contains("Failed");
-                    if (commandFailed)
+                    if (!processedCommand)
                     {
-                        failedCommands.Add($"{command}: {result}");
+                        // Process only the first command
+                        string command = match.Groups[1].Value;
+                        string result = ProcessSceneCommand(command);
+                        
+                        // Check if the command failed (result contains "Failed")
+                        bool commandFailed = result.Contains("Failed");
+                        if (commandFailed)
+                        {
+                            failedCommands.Add($"{command}: {result}");
+                        }
+                        
+                        // Mark scene as modified if a command was successful
+                        if (!commandFailed && command.StartsWith("scene.") && 
+                            !command.StartsWith("scene.list") && 
+                            !command.StartsWith("scene.materials") && 
+                            !command.StartsWith("scene.prefabs"))
+                        {
+                            sceneWasModified = true;
+                        }
+                        
+                        // Insert execution results below each command in the chat
+                        chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
+                            match.Value, 
+                            $"{match.Value}\n\n**Command Result:**\n```\n{result}\n```");
+                        
+                        processedCommand = true;
+                    }
+                    else
+                    {
+                        // Record additional commands that will be ignored
+                        additionalCommands.Add(match);
+                    }
+                }
+                
+                // If there were additional commands that weren't processed, update the message
+                if (additionalCommands.Count > 0)
+                {
+                    StringBuilder warningMessage = new StringBuilder();
+                    warningMessage.AppendLine("\n\n**⚠️ WARNING: Additional commands were ignored due to the step-by-step workflow:**");
+                    
+                    foreach (var match in additionalCommands)
+                    {
+                        string command = match.Groups[1].Value;
+                        warningMessage.AppendLine($"- `{command}` (not executed - please wait for confirmation before proceeding)");
+                        
+                        // Add highlighting to ignored commands in the response
+                        chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
+                            match.Value, 
+                            $"**[IGNORED]** {match.Value}");
                     }
                     
-                    // Mark scene as modified if a command was successful
-                    if (!commandFailed && command.StartsWith("scene.") && 
-                        !command.StartsWith("scene.list") && 
-                        !command.StartsWith("scene.materials") && 
-                        !command.StartsWith("scene.prefabs"))
-                    {
-                        sceneWasModified = true;
-                    }
-                    
-                    // Insert execution results below each command in the chat
-                    chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
-                        match.Value, 
-                        $"{match.Value}\n\n**Command Result:**\n```\n{result}\n```");
+                    // Add this warning as a system message that the AI will see
+                    AddSystemMessage(warningMessage.ToString() + 
+                        "\n\nPlease follow the step-by-step approach: Wait for confirmation of success before proceeding to the next step. " +
+                        "If the previous step failed, troubleshoot that issue before continuing.");
                 }
                 
                 // Refresh scene data if any commands modified the scene
@@ -743,7 +786,8 @@ namespace AICodingAssistant.Editor
                     
                     if (failedCommands.Count == 0)
                     {
-                        stepCompletionMessage.AppendLine("✅ Last scene operation step completed successfully.");
+                        stepCompletionMessage.AppendLine("✅ **STEP COMPLETED SUCCESSFULLY**");
+                        stepCompletionMessage.AppendLine("You may now proceed to the next step in your plan.");
                         
                         // Add current scene state for verification context
                         stepCompletionMessage.AppendLine("\nCurrent scene state after the operation:");
@@ -751,7 +795,7 @@ namespace AICodingAssistant.Editor
                         
                         // Include recently modified objects if possible
                         var lastCommandPath = sceneCommandMatches.Cast<System.Text.RegularExpressions.Match>()
-                            .LastOrDefault()?.Groups[1].Value;
+                            .FirstOrDefault()?.Groups[1].Value;
                             
                         if (!string.IsNullOrEmpty(lastCommandPath))
                         {
@@ -774,10 +818,16 @@ namespace AICodingAssistant.Editor
                                 }
                             }
                         }
+                        
+                        // Add specific next step instruction
+                        stepCompletionMessage.AppendLine("\n**Next action:**");
+                        stepCompletionMessage.AppendLine("1. Send a new response with only the next single command");
+                        stepCompletionMessage.AppendLine("2. Remember to proceed one step at a time");
                     }
                     else
                     {
-                        stepCompletionMessage.AppendLine("❌ Last scene operation step failed. Please fix before continuing.");
+                        stepCompletionMessage.AppendLine("❌ **STEP FAILED - DO NOT PROCEED WITH NEXT STEPS**");
+                        stepCompletionMessage.AppendLine("You must troubleshoot and fix this specific error before continuing.");
                     }
                     
                     // Add this as a system message that's visible to the AI but not the user
@@ -793,15 +843,18 @@ namespace AICodingAssistant.Editor
                     Debug.Log($"Detected {failedCommands.Count} failed scene commands");
                     
                     // Add a system message to inform about failed commands
-                    string failureMessage = "The following scene commands failed:\n\n";
+                    string failureMessage = "❌ **STEP FAILED - DO NOT PROCEED WITH NEXT STEPS**\n\n";
+                    failureMessage += "The following scene command failed:\n\n";
                     foreach (string failure in failedCommands)
                     {
                         failureMessage += $"- {failure}\n";
                     }
-                    failureMessage += "\nPlease acknowledge these failures and adjust your approach accordingly in your next response.";
+                    failureMessage += "\n**Required action: Stop and troubleshoot this specific issue before proceeding.**\n";
+                    failureMessage += "1. Identify why the command failed (e.g., incorrect path, invalid component name)\n";
+                    failureMessage += "2. Suggest a correction for this specific step\n";
+                    failureMessage += "3. Do not attempt subsequent steps until this issue is resolved\n";
                     
                     // Add this as a system message that's visible to the AI but not the user
-                    // This will be included in the next AI prompt but won't be shown in the chat UI
                     AddSystemMessage(failureMessage);
                 }
             }
