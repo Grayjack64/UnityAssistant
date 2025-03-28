@@ -330,25 +330,25 @@ namespace AICodingAssistant.Editor
             if (GUILayout.Button("List Scene", GUILayout.Width(100)))
             {
                 string result = ProcessSceneCommand("scene.list");
-                AddSystemMessage($"Scene Hierarchy:\n```\n{result}\n```");
+                AddSystemMessage($"Scene Hierarchy:\n```\n{result}\n```", true);
             }
             
             if (GUILayout.Button("List Materials", GUILayout.Width(120)))
             {
                 string result = ProcessSceneCommand("scene.materials");
-                AddSystemMessage($"Available Materials:\n```\n{result}\n```");
+                AddSystemMessage($"Available Materials:\n```\n{result}\n```", true);
             }
             
             if (GUILayout.Button("List Prefabs", GUILayout.Width(100)))
             {
                 string result = ProcessSceneCommand("scene.prefabs");
-                AddSystemMessage($"Available Prefabs:\n```\n{result}\n```");
+                AddSystemMessage($"Available Prefabs:\n```\n{result}\n```", true);
             }
             
             if (GUILayout.Button("Refresh Scene Data", GUILayout.Width(150)))
             {
                 RefreshSceneData();
-                AddSystemMessage("Scene data refreshed.");
+                AddSystemMessage("Scene data refreshed.", true);
             }
             
             EditorGUILayout.EndHorizontal();
@@ -361,7 +361,7 @@ namespace AICodingAssistant.Editor
             {
                 string objName = "NewObject_" + DateTime.Now.ToString("HHmmss");
                 string result = ProcessSceneCommand($"scene.create {objName}");
-                AddSystemMessage($"Create empty object result:\n```\n{result}\n```");
+                AddSystemMessage($"Create empty object result:\n```\n{result}\n```", true);
             }
             
             string[] primitiveOptions = { "Cube", "Sphere", "Capsule", "Cylinder", "Plane", "Quad" };
@@ -371,7 +371,7 @@ namespace AICodingAssistant.Editor
             {
                 string objName = primitiveOptions[primitiveIndex] + "_" + DateTime.Now.ToString("HHmmss");
                 string result = ProcessSceneCommand($"scene.primitive {primitiveOptions[primitiveIndex]} {objName}");
-                AddSystemMessage($"Create primitive result:\n```\n{result}\n```");
+                AddSystemMessage($"Create primitive result:\n```\n{result}\n```", true);
             }
             
             EditorGUILayout.LabelField("Search:", GUILayout.Width(50));
@@ -387,7 +387,7 @@ namespace AICodingAssistant.Editor
                 else
                 {
                     // Add a system message about the missing search term
-                    AddSystemMessage("I tried to search the codebase, but I couldn't determine what to search for.");
+                    AddSystemMessage("I tried to search the codebase, but I couldn't determine what to search for.", true);
                 }
             }
             
@@ -582,15 +582,15 @@ namespace AICodingAssistant.Editor
             prompt.AppendLine("1. Start by creating a clear plan of action with all the steps needed to accomplish the task");
             prompt.AppendLine("2. Execute only ONE scene command or script addition PER RESPONSE - any additional commands will be ignored");
             prompt.AppendLine("3. After each step, verify it worked correctly by checking the command result");
-            prompt.AppendLine("4. Only proceed to the next step after confirming the previous step was successful");
+            prompt.AppendLine("4. When a step succeeds, automatically continue with the next step - no need to wait for user confirmation");
             prompt.AppendLine("5. If a step fails, STOP IMMEDIATELY and troubleshoot that specific issue before attempting anything else");
             prompt.AppendLine("6. After component addition, use `scene.components` to verify the component was added correctly");
             prompt.AppendLine("7. For script additions, wait for feedback on whether the script compiled successfully");
             prompt.AppendLine("8. Don't mention multiple steps in a single response - focus only on the current step");
             prompt.AppendLine();
             
-            prompt.AppendLine("Important: The assistant processes only ONE scene command per response. After executing a command and seeing the result,");
-            prompt.AppendLine("wait for user feedback or send a new response with the next command only if the previous step was successful.");
+            prompt.AppendLine("Important: The assistant processes only ONE scene command per response. After executing a command and seeing it succeed,");
+            prompt.AppendLine("continue automatically with the next step in your plan in a new response. Don't wait for user confirmation on successful steps.");
             prompt.AppendLine();
             
             // Add project context information if requested
@@ -787,7 +787,7 @@ namespace AICodingAssistant.Editor
                     if (failedCommands.Count == 0)
                     {
                         stepCompletionMessage.AppendLine("✅ **STEP COMPLETED SUCCESSFULLY**");
-                        stepCompletionMessage.AppendLine("You may now proceed to the next step in your plan.");
+                        stepCompletionMessage.AppendLine("Automatically continue to the next step in your plan.");
                         
                         // Add current scene state for verification context
                         stepCompletionMessage.AppendLine("\nCurrent scene state after the operation:");
@@ -821,8 +821,9 @@ namespace AICodingAssistant.Editor
                         
                         // Add specific next step instruction
                         stepCompletionMessage.AppendLine("\n**Next action:**");
-                        stepCompletionMessage.AppendLine("1. Send a new response with only the next single command");
-                        stepCompletionMessage.AppendLine("2. Remember to proceed one step at a time");
+                        stepCompletionMessage.AppendLine("1. Continue with your plan by sending a new response with ONLY the next command");
+                        stepCompletionMessage.AppendLine("2. No need to wait for user confirmation when a step succeeds - proceed automatically");
+                        stepCompletionMessage.AppendLine("3. Remember to execute only one command per response");
                     }
                     else
                     {
@@ -911,8 +912,14 @@ namespace AICodingAssistant.Editor
         /// <summary>
         /// Adds a system message that's only visible to the AI, not to the user in the chat UI
         /// </summary>
-        private void AddSystemMessage(string content)
+        private void AddSystemMessage(string content, bool isFromUIAction = false)
         {
+            // If the message is from a UI button action, add a note about it
+            if (isFromUIAction)
+            {
+                content = content + "\n\n(Note: This message was generated by a UI button action and does not require a response)";
+            }
+            
             // Create a special type of message that will be included in prompts to the AI
             // but won't be displayed in the chat UI
             ChatMessage systemMessage = new ChatMessage
