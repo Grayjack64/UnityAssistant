@@ -20,7 +20,7 @@ namespace AICodingAssistant.Editor
     {
         // Window state
         private int currentTabIndex = 0;
-        private string[] tabOptions = { "Chat", "Settings" };
+        private string[] tabOptions = { "Chat", "Settings", "Scene Operations" };
         private Vector2 scrollPosition;
         
         // AI settings
@@ -61,6 +61,9 @@ namespace AICodingAssistant.Editor
         private bool codebaseInitialized = false;
         private float codebaseInitProgress = 0f;
         private UnityEngine.Object scriptObject;
+        
+        // Scene Operations tab
+        private SceneOperationsTab sceneOperationsTab;
         
         [MenuItem("Window/AI Coding Assistant")]
         public static void ShowWindow()
@@ -112,6 +115,9 @@ namespace AICodingAssistant.Editor
                           "Just describe what you need in natural language, and I'll help you out!",
                 Timestamp = DateTime.Now
             });
+            
+            // Initialize the scene operations tab
+            sceneOperationsTab = new SceneOperationsTab();
         }
         
         private async Task InitializeCodebaseContext()
@@ -171,6 +177,9 @@ namespace AICodingAssistant.Editor
                     break;
                 case 1: // Settings
                     DrawSettingsTab();
+                    break;
+                case 2: // Scene Operations
+                    sceneOperationsTab.Draw();
                     break;
             }
             
@@ -480,6 +489,25 @@ namespace AICodingAssistant.Editor
             prompt.AppendLine();
             prompt.AppendLine("When creating new files, always use the ```edit:PATH``` format with the full file content. The path should reflect proper Unity conventions (e.g., Scripts folder for scripts, Editor folder for editor scripts).");
             
+            // Add instructions about scene manipulation capabilities
+            prompt.AppendLine();
+            prompt.AppendLine("## SCENE MANIPULATION");
+            prompt.AppendLine("You can directly manipulate the Unity scene using these commands, which will be executed when included in your response:");
+            prompt.AppendLine("- `scene.list` - Lists all GameObjects in the current scene");
+            prompt.AppendLine("- `scene.create [name] [optional:parent_path]` - Creates a new empty GameObject");
+            prompt.AppendLine("- `scene.primitive [type] [name] [optional:parent_path]` - Creates a primitive GameObject (Cube, Sphere, etc.)");
+            prompt.AppendLine("- `scene.position [path] [x] [y] [z] [optional:isLocal]` - Sets the position of a GameObject");
+            prompt.AppendLine("- `scene.rotation [path] [x] [y] [z] [optional:isLocal]` - Sets the rotation of a GameObject");
+            prompt.AppendLine("- `scene.scale [path] [x] [y] [z]` - Sets the scale of a GameObject");
+            prompt.AppendLine("- `scene.addcomponent [path] [componentName]` - Adds a component to a GameObject");
+            prompt.AppendLine("- `scene.setfield [path] [componentName] [fieldName] [value]` - Sets a field value on a component");
+            prompt.AppendLine("- `scene.material [path] [materialPath] [optional:materialIndex]` - Sets a material on a GameObject");
+            prompt.AppendLine("- `scene.prefab [prefabPath] [optional:parent_path]` - Instantiates a prefab in the scene");
+            prompt.AppendLine("- `scene.delete [path]` - Deletes a GameObject from the scene");
+            prompt.AppendLine();
+            prompt.AppendLine("When suggesting scene changes, wrap commands in backticks like `scene.command args` so they will be executed immediately when you respond.");
+            prompt.AppendLine();
+            
             // Add instructions about compilation errors if there are any
             if (ChangeTracker.Instance.HasCompilationErrors())
             {
@@ -578,6 +606,33 @@ namespace AICodingAssistant.Editor
         
         private async Task ProcessAIResponse(string query, string response)
         {
+            // Process any scene commands in the response
+            if (response.Contains("scene."))
+            {
+                // Extract scene commands from the response using regex
+                var sceneCommandMatches = System.Text.RegularExpressions.Regex.Matches(response, @"`(scene\.[^`]+)`");
+                
+                foreach (System.Text.RegularExpressions.Match match in sceneCommandMatches)
+                {
+                    string command = match.Groups[1].Value;
+                    string result = ProcessSceneCommand(command);
+                    
+                    // Insert execution results below each command in the chat
+                    chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
+                        match.Value, 
+                        $"{match.Value}\n\n**Command Result:**\n```\n{result}\n```");
+                        
+                    // Refresh the scene operations tab if it's active
+                    if (currentTabIndex == 2) // Scene Operations tab
+                    {
+                        sceneOperationsTab.RefreshSceneHierarchy();
+                    }
+                }
+                
+                // Repaint to show the updated response with command results
+                Repaint();
+            }
+            
             // Check for code edit suggestions
             var codeEdits = CodeEditUtility.ExtractEdits(response);
             if (codeEdits.Count > 0)
@@ -998,6 +1053,168 @@ namespace AICodingAssistant.Editor
             // This is a simple implementation - in a real editor with rich text support,
             // you would actually style the code blocks differently
             return text;
+        }
+        
+        /// <summary>
+        /// Processes scene manipulation commands from the AI
+        /// </summary>
+        /// <param name="command">The scene command to process</param>
+        /// <returns>Result message</returns>
+        private string ProcessSceneCommand(string command)
+        {
+            try
+            {
+                string[] parts = command.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                if (parts.Length == 0)
+                    return "Invalid scene command format";
+                    
+                string action = parts[0].ToLower();
+                
+                switch (action)
+                {
+                    case "scene.list":
+                        var sceneHierarchy = AICodingAssistant.Scripts.SceneManipulationService.GetSceneHierarchy();
+                        return "Scene Hierarchy:\n" + string.Join("\n", sceneHierarchy);
+                        
+                    case "scene.create":
+                        if (parts.Length < 2)
+                            return "Usage: scene.create [name] [optional:parent_path]";
+                            
+                        string name = parts[1];
+                        string parentPath = parts.Length > 2 ? string.Join(" ", parts, 2, parts.Length - 2) : null;
+                        
+                        var createResult = AICodingAssistant.Scripts.SceneManipulationService.CreateEmptyGameObject(name, parentPath);
+                        return createResult.Message;
+                        
+                    case "scene.primitive":
+                        if (parts.Length < 3)
+                            return "Usage: scene.primitive [type] [name] [optional:parent_path]";
+                            
+                        string primitiveTypeStr = parts[1];
+                        if (!Enum.TryParse(primitiveTypeStr, true, out PrimitiveType primitiveType))
+                            return $"Invalid primitive type: {primitiveTypeStr}. Valid types are: Cube, Sphere, Capsule, Cylinder, Plane, Quad";
+                            
+                        string primitiveName = parts[2];
+                        string primitiveParentPath = parts.Length > 3 ? string.Join(" ", parts, 3, parts.Length - 3) : null;
+                        
+                        var primitiveResult = AICodingAssistant.Scripts.SceneManipulationService.CreatePrimitiveGameObject(
+                            primitiveType, primitiveName, primitiveParentPath);
+                        return primitiveResult.Message;
+                        
+                    case "scene.position":
+                        if (parts.Length < 5)
+                            return "Usage: scene.position [path] [x] [y] [z] [optional:isLocal]";
+                            
+                        string posPath = parts[1];
+                        
+                        if (!float.TryParse(parts[2], out float posX) ||
+                            !float.TryParse(parts[3], out float posY) ||
+                            !float.TryParse(parts[4], out float posZ))
+                            return "Invalid position values. Please provide numerical values for x, y, z.";
+                            
+                        bool posIsLocal = parts.Length > 5 && bool.TryParse(parts[5], out bool localPos) ? localPos : true;
+                        
+                        var positionResult = AICodingAssistant.Scripts.SceneManipulationService.SetPosition(
+                            posPath, posX, posY, posZ, posIsLocal);
+                        return positionResult.Message;
+                        
+                    case "scene.rotation":
+                        if (parts.Length < 5)
+                            return "Usage: scene.rotation [path] [x] [y] [z] [optional:isLocal]";
+                            
+                        string rotPath = parts[1];
+                        
+                        if (!float.TryParse(parts[2], out float rotX) ||
+                            !float.TryParse(parts[3], out float rotY) ||
+                            !float.TryParse(parts[4], out float rotZ))
+                            return "Invalid rotation values. Please provide numerical values for x, y, z.";
+                            
+                        bool rotIsLocal = parts.Length > 5 && bool.TryParse(parts[5], out bool localRot) ? localRot : true;
+                        
+                        var rotationResult = AICodingAssistant.Scripts.SceneManipulationService.SetRotation(
+                            rotPath, rotX, rotY, rotZ, rotIsLocal);
+                        return rotationResult.Message;
+                        
+                    case "scene.scale":
+                        if (parts.Length < 5)
+                            return "Usage: scene.scale [path] [x] [y] [z]";
+                            
+                        string scalePath = parts[1];
+                        
+                        if (!float.TryParse(parts[2], out float scaleX) ||
+                            !float.TryParse(parts[3], out float scaleY) ||
+                            !float.TryParse(parts[4], out float scaleZ))
+                            return "Invalid scale values. Please provide numerical values for x, y, z.";
+                            
+                        var scaleResult = AICodingAssistant.Scripts.SceneManipulationService.SetScale(
+                            scalePath, scaleX, scaleY, scaleZ);
+                        return scaleResult.Message;
+                        
+                    case "scene.addcomponent":
+                        if (parts.Length < 3)
+                            return "Usage: scene.addcomponent [path] [componentName]";
+                            
+                        string componentPath = parts[1];
+                        string componentName = parts[2];
+                        
+                        var addComponentResult = AICodingAssistant.Scripts.SceneManipulationService.AddComponent(
+                            componentPath, componentName);
+                        return addComponentResult.Message;
+                        
+                    case "scene.setfield":
+                        if (parts.Length < 5)
+                            return "Usage: scene.setfield [path] [componentName] [fieldName] [value]";
+                            
+                        string fieldPath = parts[1];
+                        string fieldComponentName = parts[2];
+                        string fieldName = parts[3];
+                        string fieldValue = string.Join(" ", parts, 4, parts.Length - 4);
+                        
+                        var setFieldResult = AICodingAssistant.Scripts.SceneManipulationService.SetComponentField(
+                            fieldPath, fieldComponentName, fieldName, fieldValue);
+                        return setFieldResult.Message;
+                        
+                    case "scene.material":
+                        if (parts.Length < 3)
+                            return "Usage: scene.material [path] [materialPath] [optional:materialIndex]";
+                            
+                        string materialPath = parts[1];
+                        string materialAssetPath = parts[2];
+                        int materialIndex = parts.Length > 3 && int.TryParse(parts[3], out int matIndex) ? matIndex : 0;
+                        
+                        var materialResult = AICodingAssistant.Scripts.SceneManipulationService.SetMaterial(
+                            materialPath, materialAssetPath, materialIndex);
+                        return materialResult.Message;
+                        
+                    case "scene.prefab":
+                        if (parts.Length < 2)
+                            return "Usage: scene.prefab [prefabPath] [optional:parent_path]";
+                            
+                        string prefabPath = parts[1];
+                        string prefabParentPath = parts.Length > 2 ? string.Join(" ", parts, 2, parts.Length - 2) : null;
+                        
+                        var prefabResult = AICodingAssistant.Scripts.SceneManipulationService.InstantiatePrefab(
+                            prefabPath, prefabParentPath);
+                        return prefabResult.Message;
+                        
+                    case "scene.delete":
+                        if (parts.Length < 2)
+                            return "Usage: scene.delete [path]";
+                            
+                        string deletePath = parts[1];
+                        
+                        var deleteResult = AICodingAssistant.Scripts.SceneManipulationService.DeleteGameObject(deletePath);
+                        return deleteResult.Message;
+                        
+                    default:
+                        return $"Unknown scene command: {action}";
+                }
+            }
+            catch (Exception ex)
+            {
+                return $"Error processing scene command: {ex.Message}";
+            }
         }
         
         #endregion
