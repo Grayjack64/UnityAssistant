@@ -190,70 +190,53 @@ namespace AICodingAssistant.Editor
         
         private void DrawUnifiedChatTab()
         {
-            EditorGUILayout.Space(10);
-            EditorGUILayout.LabelField("AI Coding Assistant", EditorStyles.boldLabel);
-            EditorGUILayout.Space(5);
+            // Top section - Message area
+            float chatAreaHeight = position.height - 150;
+            EditorGUILayout.BeginVertical(GUILayout.Height(chatAreaHeight));
             
-            // Backend selection
+            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+            
+            // Draw chat history
+            foreach (var message in chatHistory)
+            {
+                // Skip system messages in the UI display
+                if (message.IsSystemMessage)
+                    continue;
+                    
+                DrawChatMessage(message);
+            }
+            
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+            
+            // Bottom section - Input area
+            EditorGUILayout.BeginVertical(GUILayout.Height(150));
+            
+            // Draw controls for code context and console logs
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("AI Backend:", GUILayout.Width(80));
-            var newBackendType = (AIBackendType)EditorGUILayout.EnumPopup(selectedBackendType);
-            if (newBackendType != selectedBackendType)
+            
+            includeCodeContext = EditorGUILayout.ToggleLeft("Include Code Context", includeCodeContext, GUILayout.Width(150));
+            includeConsoleLogs = EditorGUILayout.ToggleLeft("Include Console Logs", includeConsoleLogs, GUILayout.Width(150));
+            includeProjectSummary = EditorGUILayout.ToggleLeft("Include Project Summary", includeProjectSummary, GUILayout.Width(180));
+            
+            if (GUILayout.Button("Regenerate Project Summary", GUILayout.Width(180)))
             {
-                selectedBackendType = newBackendType;
-                currentBackend = AIBackend.CreateBackend(selectedBackendType);
-                
-                // If switching to Claude, refresh model list if API key is configured
-                if (selectedBackendType == AIBackendType.Claude && !string.IsNullOrEmpty(claudeApiKey))
-                {
-                    // Refresh models with a slight delay to ensure the backend is initialized
-                    EditorApplication.delayCall += RefreshClaudeModels;
-                }
+                GenerateProjectSummary();
             }
             
-            // Show current model if using Claude
-            if (selectedBackendType == AIBackendType.Claude)
-            {
-                EditorGUILayout.EndHorizontal();
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("Current Model:", GUILayout.Width(100));
-                
-                if (isLoadingClaudeModels)
-                {
-                    EditorGUILayout.LabelField("Loading models...");
-                }
-                else
-                {
-                    string modelDisplayName = "Unknown";
-                    foreach (var option in claudeModelOptions)
-                    {
-                        // Find display name that corresponds to current model ID
-                        if (claudeModelOptions.Length > selectedClaudeModelIndex && 
-                            selectedClaudeModelIndex >= 0)
-                        {
-                            modelDisplayName = claudeModelOptions[selectedClaudeModelIndex];
-                        }
-                    }
-                    
-                    EditorGUILayout.LabelField(modelDisplayName);
-                    
-                    // Add a button to manage models
-                    if (GUILayout.Button("Change Model", GUILayout.Width(100)))
-                    {
-                        currentTabIndex = 1; // Switch to settings tab
-                        GUI.FocusControl(null); // Clear focus to ensure UI updates
-                    }
-                }
-            }
             EditorGUILayout.EndHorizontal();
             
-            // Context options
+            // Draw script selection
             EditorGUILayout.BeginHorizontal();
-            
-            // Script selection
-            EditorGUILayout.BeginVertical(GUILayout.Width(250));
             EditorGUILayout.LabelField("Selected Script:", GUILayout.Width(100));
-            var newScriptObject = EditorGUILayout.ObjectField(scriptObject, typeof(MonoScript), false, GUILayout.Width(240));
+            
+            EditorGUI.BeginDisabledGroup(true);
+            EditorGUILayout.TextField(selectedScriptPath);
+            EditorGUI.EndDisabledGroup();
+            
+            // Script object field
+            UnityEngine.Object newScriptObject = EditorGUILayout.ObjectField(scriptObject, typeof(MonoScript), false, GUILayout.Width(100));
+            
             if (newScriptObject != scriptObject)
             {
                 scriptObject = newScriptObject;
@@ -261,122 +244,99 @@ namespace AICodingAssistant.Editor
                 {
                     selectedScriptPath = AssetDatabase.GetAssetPath(scriptObject);
                 }
-                else
-                {
-                    selectedScriptPath = "";
-                }
             }
-            EditorGUILayout.EndVertical();
             
-            // Context toggles
-            EditorGUILayout.BeginVertical();
-            includeConsoleLogs = EditorGUILayout.ToggleLeft("Include Console Logs", includeConsoleLogs);
-            includeCodeContext = EditorGUILayout.ToggleLeft("Include Code Context", includeCodeContext);
-            includeProjectSummary = EditorGUILayout.ToggleLeft("Include Project Summary", includeProjectSummary);
-            EditorGUILayout.EndVertical();
+            if (GUILayout.Button("Analyze Script", GUILayout.Width(100)))
+            {
+                AnalyzeSelectedScript();
+            }
             
             EditorGUILayout.EndHorizontal();
             
-            EditorGUILayout.Space(10);
-            
-            // Chat history
-            EditorGUILayout.LabelField("Conversation:", EditorStyles.boldLabel);
-            
-            // Display chat history
-            float messageHeight = 0;
-            foreach (var message in chatHistory)
-            {
-                // Calculate approximate height based on content
-                float contentHeight = EditorStyles.textArea.CalcHeight(new GUIContent(message.Content), EditorGUIUtility.currentViewWidth - 40);
-                
-                // Display the message
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                
-                // Message header (User/AI + timestamp)
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(message.IsUser ? "You:" : "AI Assistant:", EditorStyles.boldLabel);
-                EditorGUILayout.LabelField(message.Timestamp.ToString("HH:mm:ss"), GUILayout.Width(70));
-                EditorGUILayout.EndHorizontal();
-                
-                // Message content
-                GUIStyle messageStyle = new GUIStyle(EditorStyles.textArea);
-                messageStyle.wordWrap = true;
-                messageStyle.richText = true;
-                
-                // Format code blocks in AI responses
-                string formattedContent = message.IsUser ? message.Content : FormatCodeBlocks(message.Content);
-                
-                EditorGUILayout.TextArea(formattedContent, messageStyle, GUILayout.Height(contentHeight));
-                
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.Space(5);
-                
-                messageHeight += contentHeight + 60; // Add height for padding, headers, etc.
-            }
-            
-            // Ensure we scroll to the bottom when new messages arrive
-            if (Event.current.type == EventType.Layout && chatHistory.Count > 0 && chatHistory[chatHistory.Count - 1].IsNew)
-            {
-                chatHistory[chatHistory.Count - 1].IsNew = false;
-                scrollPosition.y = messageHeight;
-                Repaint();
-            }
-            
-            // Processing message
-            if (isProcessing)
-            {
-                EditorGUILayout.HelpBox("AI is thinking...", MessageType.Info);
-            }
-            
-            EditorGUILayout.Space(10);
-            
-            // User input
-            EditorGUILayout.LabelField("Your Message:");
-            userQuery = EditorGUILayout.TextArea(userQuery, GUILayout.Height(60));
-            
-            EditorGUILayout.Space(5);
-            
-            // Send button
+            // Command buttons row
             EditorGUILayout.BeginHorizontal();
-            EditorGUI.BeginDisabledGroup(isProcessing || string.IsNullOrWhiteSpace(userQuery));
-            if (GUILayout.Button("Send", GUILayout.Height(30)))
+            
+            // Search the codebase
+            if (GUILayout.Button("Search Codebase", GUILayout.Width(120)))
+            {
+                string searchTerm = ExtractSearchTerm(userQuery);
+                if (!string.IsNullOrEmpty(searchTerm))
+                {
+                    PerformCodebaseSearch(searchTerm);
+                }
+                else
+                {
+                    // Add a system message about the missing search term
+                    AddSystemMessage("I tried to search the codebase, but I couldn't determine what to search for.");
+                }
+            }
+            
+            // List scene contents
+            if (GUILayout.Button("List Scene", GUILayout.Width(100)))
+            {
+                string result = ProcessSceneCommand("scene.list");
+                AddSystemMessage($"Scene Hierarchy:\n```\n{result}\n```");
+            }
+            
+            // List materials
+            if (GUILayout.Button("List Materials", GUILayout.Width(120)))
+            {
+                string result = ProcessSceneCommand("scene.materials");
+                AddSystemMessage($"Available Materials:\n```\n{result}\n```");
+            }
+            
+            // List prefabs
+            if (GUILayout.Button("List Prefabs", GUILayout.Width(100)))
+            {
+                string result = ProcessSceneCommand("scene.prefabs");
+                AddSystemMessage($"Available Prefabs:\n```\n{result}\n```");
+            }
+            
+            EditorGUILayout.EndHorizontal();
+            
+            // User input field
+            EditorGUILayout.BeginHorizontal();
+            
+            // Handle pressing Enter in the text field
+            GUI.SetNextControlName("UserQueryField");
+            
+            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return 
+                && GUI.GetNameOfFocusedControl() == "UserQueryField" && !Event.current.shift)
+            {
+                if (!string.IsNullOrEmpty(userQuery) && !isProcessing)
+                {
+                    SendChatMessage();
+                    Event.current.Use(); // Consume the event
+                }
+            }
+            
+            // Multiline text area with word wrap
+            GUIStyle textAreaStyle = new GUIStyle(EditorStyles.textArea);
+            textAreaStyle.wordWrap = true;
+            
+            userQuery = EditorGUILayout.TextArea(userQuery, textAreaStyle, GUILayout.Height(80));
+            
+            EditorGUILayout.EndHorizontal();
+            
+            // Send button and status
+            EditorGUILayout.BeginHorizontal();
+            
+            EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(userQuery) || isProcessing);
+            if (GUILayout.Button("Send", GUILayout.Width(80), GUILayout.Height(30)))
             {
                 SendChatMessage();
             }
             EditorGUI.EndDisabledGroup();
             
-            // Clear chat button
-            if (GUILayout.Button("Clear Chat", GUILayout.Width(100), GUILayout.Height(30)))
+            // Display processing status
+            if (isProcessing)
             {
-                chatHistory.Clear();
-                chatHistory.Add(new ChatMessage
-                {
-                    IsUser = false,
-                    Content = "Chat history cleared. How can I help you?",
-                    Timestamp = DateTime.Now,
-                    IsNew = true
-                });
-                Repaint();
-            }
-            
-            // Refresh context button
-            if (GUILayout.Button("Refresh Context", GUILayout.Width(120), GUILayout.Height(30)))
-            {
-                GenerateProjectSummary();
-                EditorUtility.DisplayDialog("Context Refreshed", "Project summary and context has been refreshed.", "OK");
+                EditorGUILayout.LabelField("Processing...", EditorStyles.boldLabel);
             }
             
             EditorGUILayout.EndHorizontal();
             
-            // Handle Enter key to send message
-            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.Return && Event.current.modifiers == EventModifiers.Control)
-            {
-                if (!string.IsNullOrWhiteSpace(userQuery) && !isProcessing)
-                {
-                    SendChatMessage();
-                    Event.current.Use();
-                }
-            }
+            EditorGUILayout.EndVertical();
         }
         
         private async void SendChatMessage()
@@ -470,142 +430,124 @@ namespace AICodingAssistant.Editor
         {
             StringBuilder prompt = new StringBuilder();
 
-            // Add System Instructions
-            prompt.AppendLine("# SYSTEM INSTRUCTIONS");
-            prompt.AppendLine("You are a helpful AI coding assistant for Unity development. Help the user with their Unity coding tasks. Your responses should be clear, concise, and tailored to Unity development best practices.");
+            // Create a header for the prompt with context
+            prompt.AppendLine("You are an AI assistant for Unity development.");
+            prompt.AppendLine("You can help with coding, debugging, and explaining Unity concepts.");
+            prompt.AppendLine("You are knowledgeable about C#, Unity Engine APIs, and game development patterns.");
+            prompt.AppendLine();
+
+            // Include scene manipulation instructions
+            prompt.AppendLine("You can manipulate the Unity scene using the following commands enclosed in backticks (`):");
+            prompt.AppendLine("- `scene.list` - List all GameObjects in the scene hierarchy");
+            prompt.AppendLine("- `scene.create NAME [PARENT_PATH]` - Create a new GameObject, optionally as a child (example: `scene.create Player` or `scene.create MainCamera /Player`)");
+            prompt.AppendLine("- `scene.position PATH X Y Z [LOCAL]` - Set position (example: `scene.position Player 0 1 0 true` for local position)");
+            prompt.AppendLine("- `scene.rotation PATH X Y Z [LOCAL]` - Set rotation in degrees (example: `scene.rotation Player 0 90 0`)");
+            prompt.AppendLine("- `scene.scale PATH X Y Z` - Set scale (example: `scene.scale Player 2 2 2`)");
+            prompt.AppendLine("- `scene.primitive TYPE NAME [PARENT_PATH]` - Create primitive (example: `scene.primitive Cube MyCube`)");
+            prompt.AppendLine("- `scene.components PATH` - List components on a GameObject (example: `scene.components Player`)");
+            prompt.AppendLine("- `scene.addcomponent PATH COMPONENT_NAME` - Add component (example: `scene.addcomponent Player Rigidbody`)");
+            prompt.AppendLine("- `scene.setfield PATH COMPONENT FIELD VALUE` - Set component field (example: `scene.setfield Player Rigidbody mass 5`)");
+            prompt.AppendLine("- `scene.material PATH MATERIAL_PATH [INDEX]` - Set material (example: `scene.material Player Materials/Red`)");
+            prompt.AppendLine("- `scene.prefab PREFAB_PATH [PARENT_PATH]` - Instantiate prefab (example: `scene.prefab Prefabs/Enemy`)");
+            prompt.AppendLine("- `scene.delete PATH` - Delete GameObject (example: `scene.delete Enemy`)");
+            prompt.AppendLine("- `scene.materials` - List all materials in the project");
+            prompt.AppendLine("- `scene.prefabs` - List all prefabs in the project");
             prompt.AppendLine();
             
-            // Add instructions about code edits
-            prompt.AppendLine("## CODE CHANGES");
-            prompt.AppendLine("When suggesting code changes, you can:");
-            prompt.AppendLine("1. Edit existing files with clear instructions");
-            prompt.AppendLine("2. Create new files if needed using the following format:");
+            prompt.AppendLine("Follow these guidelines for scene manipulation:");
+            prompt.AppendLine("1. Always check for failed commands in my responses and adapt your approach accordingly");
+            prompt.AppendLine("2. For component operations, use the exact component name (e.g., 'Rigidbody', not 'RigidBody')");
+            prompt.AppendLine("3. For path parameters, use the full hierarchy path (e.g., 'Parent/Child')");
+            prompt.AppendLine("4. For positions and rotations, specify if they're local with an optional 'true' parameter");
             prompt.AppendLine();
-            prompt.AppendLine("```edit:Assets/Scripts/NewFileName.cs");
-            prompt.AppendLine("// Complete file content here");
-            prompt.AppendLine("using UnityEngine;");
-            prompt.AppendLine("// Rest of the file...");
-            prompt.AppendLine("```");
-            prompt.AppendLine();
-            prompt.AppendLine("When creating new files, always use the ```edit:PATH``` format with the full file content. The path should reflect proper Unity conventions (e.g., Scripts folder for scripts, Editor folder for editor scripts).");
-            
-            // Add instructions about scene manipulation capabilities
-            prompt.AppendLine();
-            prompt.AppendLine("## SCENE MANIPULATION");
-            prompt.AppendLine("You can directly manipulate the Unity scene using these commands, which will be executed when included in your response:");
-            prompt.AppendLine("- `scene.list` - Lists all GameObjects in the current scene");
-            prompt.AppendLine("- `scene.create [name] [optional:parent_path]` - Creates a new empty GameObject");
-            prompt.AppendLine("- `scene.primitive [type] [name] [optional:parent_path]` - Creates a primitive GameObject (Cube, Sphere, etc.)");
-            prompt.AppendLine("- `scene.position [path] [x] [y] [z] [optional:isLocal]` - Sets the position of a GameObject");
-            prompt.AppendLine("- `scene.rotation [path] [x] [y] [z] [optional:isLocal]` - Sets the rotation of a GameObject");
-            prompt.AppendLine("- `scene.scale [path] [x] [y] [z]` - Sets the scale of a GameObject");
-            prompt.AppendLine("- `scene.addcomponent [path] [componentName]` - Adds a component to a GameObject");
-            prompt.AppendLine("- `scene.setfield [path] [componentName] [fieldName] [value]` - Sets a field value on a component");
-            prompt.AppendLine("- `scene.material [path] [materialPath] [optional:materialIndex]` - Sets a material on a GameObject");
-            prompt.AppendLine("- `scene.prefab [prefabPath] [optional:parent_path]` - Instantiates a prefab in the scene");
-            prompt.AppendLine("- `scene.delete [path]` - Deletes a GameObject from the scene");
-            prompt.AppendLine();
-            prompt.AppendLine("When suggesting scene changes, wrap commands in backticks like `scene.command args` so they will be executed immediately when you respond.");
-            prompt.AppendLine();
-            
-            // Add instructions about compilation errors if there are any
-            if (ChangeTracker.Instance.HasCompilationErrors())
+
+            // Add project context information if requested
+            if (includeProjectSummary)
             {
-                var errors = ChangeTracker.Instance.GetRecentCompilationErrors();
-                prompt.AppendLine();
-                prompt.AppendLine("## COMPILATION STATUS");
-                prompt.AppendLine("⚠️ There are compilation errors in the project that need attention:");
-                foreach (var error in errors)
-                {
-                    prompt.AppendLine($"- {error.Message} (at {error.File}:{error.Line})");
-                }
-                prompt.AppendLine();
-                prompt.AppendLine("If asked to help fix these errors, focus on that before addressing new feature requests.");
-            }
-            
-            // Add code change history and compilation status
-            var recentChanges = ChangeTracker.Instance.GetRecentChanges(5);
-            if (recentChanges.Count > 0)
-            {
-                prompt.AppendLine();
-                prompt.AppendLine("## CODE CHANGE HISTORY AND COMPILATION STATUS");
-                foreach (var change in recentChanges)
-                {
-                    string statusIcon = change.CompilationStatus == CompilationStatus.Success ? "✅" : 
-                                       change.CompilationStatus == CompilationStatus.Failed ? "❌" : 
-                                       change.CompilationStatus == CompilationStatus.Pending ? "⏳" : "❓";
-                    
-                    prompt.AppendLine($"{statusIcon} [{change.Timestamp.ToString("HH:mm:ss")}] {change.ChangeType} to {change.FilePath}");
-                    prompt.AppendLine($"    {change.Description.Replace("\n", "\n    ")}");
-                }
+                prompt.AppendLine("Project Information:");
+                prompt.AppendLine(projectSummary);
                 prompt.AppendLine();
             }
-            
-            // Add Console logs if needed
+
+            // Include console logs if requested
             if (includeConsoleLogs && consoleMonitor != null)
             {
-                prompt.AppendLine();
-                prompt.AppendLine("## RECENT CONSOLE OUTPUT");
-                var logs = consoleMonitor.GetRecentLogs(10);
-                if (logs.Count > 0)
+                var recentLogs = consoleMonitor.GetRecentLogs(10);
+                if (recentLogs.Count > 0)
                 {
-                    foreach (var log in logs)
+                    prompt.AppendLine("Recent Console Logs:");
+                    foreach (var log in recentLogs)
                     {
-                        string logPrefix = log.Type == LogType.Error ? "ERROR: " :
-                                         log.Type == LogType.Warning ? "WARNING: " :
-                                         log.Type == LogType.Exception ? "EXCEPTION: " : "";
-                        prompt.AppendLine($"[{log.Timestamp.ToString("HH:mm:ss")}] {logPrefix}{log.Message}");
+                        string prefix = "";
+                        if (log.Type == LogType.Error || log.Type == LogType.Exception)
+                            prefix = "[ERROR] ";
+                        else if (log.Type == LogType.Warning)
+                            prefix = "[WARNING] ";
+                        
+                        prompt.AppendLine($"{prefix}{log.Message}");
                     }
+                    prompt.AppendLine();
                 }
-                else
-                {
-                    prompt.AppendLine("No recent console logs.");
-                }
-                prompt.AppendLine();
             }
-            
-            // Add selected script content
+
+            // Include selected script content if available
             if (includeCodeContext && !string.IsNullOrEmpty(selectedScriptPath))
             {
-                prompt.AppendLine();
-                prompt.AppendLine("## SELECTED SCRIPT");
-                prompt.AppendLine($"Path: {selectedScriptPath}");
+                prompt.AppendLine($"Selected Script ({selectedScriptPath}):");
                 prompt.AppendLine("```csharp");
-                prompt.AppendLine(ScriptUtility.ReadScriptContent(selectedScriptPath));
+                prompt.AppendLine(File.ReadAllText(selectedScriptPath));
                 prompt.AppendLine("```");
-            }
-            
-            // Add project summary if it exists
-            if (includeProjectSummary && !string.IsNullOrEmpty(projectSummary))
-            {
                 prompt.AppendLine();
-                prompt.AppendLine("## PROJECT SUMMARY");
-                prompt.Append(projectSummary);
             }
-            
-            // Add chat history (up to maxHistoryMessages)
-            int historyCount = Math.Min(chatHistory.Count, maxHistoryMessages);
-            if (historyCount > 0)
+
+            // Include recent compilation errors if any
+            if (codebaseInitialized && includeCodeContext)
             {
-                prompt.AppendLine();
-                prompt.AppendLine("## CHAT HISTORY");
-                for (int i = chatHistory.Count - historyCount; i < chatHistory.Count; i++)
+                var changeTracker = FindObjectOfType<ChangeTracker>();
+                if (changeTracker != null && changeTracker.HasCompilationErrors())
                 {
-                    var message = chatHistory[i];
-                    prompt.AppendLine($"{(message.IsUser ? "User" : "AI")}: {message.Content}");
+                    prompt.AppendLine("Recent Compilation Errors:");
+                    var errors = changeTracker.GetRecentCompilationErrors();
+                    foreach (var error in errors)
+                    {
+                        prompt.AppendLine($"- {error.File}: Line {error.Line}: {error.ErrorMessage} ({error.ErrorCode})");
+                    }
+                    prompt.AppendLine();
+                }
+            }
+
+            // Add chat history with limited messages
+            prompt.AppendLine("Chat History:");
+            
+            // Get a subset of chat history based on maxHistoryMessages
+            int startIndex = Math.Max(0, chatHistory.Count - maxHistoryMessages);
+            for (int i = startIndex; i < chatHistory.Count; i++)
+            {
+                var message = chatHistory[i];
+                // Include all user messages and only the non-system AI messages in the displayed history
+                if (message.IsUser || !message.IsSystemMessage)
+                {
+                    prompt.AppendLine(message.IsUser ? $"User: {message.Content}" : $"AI: {message.Content}");
+                }
+                // Include all system messages in the AI prompt
+                else if (message.IsSystemMessage)
+                {
+                    prompt.AppendLine($"System: {message.Content}");
                 }
             }
             
-            // Add the current user message
-            prompt.AppendLine();
-            prompt.AppendLine("## CURRENT MESSAGE");
+            // Add the current query
             prompt.AppendLine($"User: {userMessage}");
-            
+            prompt.AppendLine("AI:");
+
             return prompt.ToString();
         }
         
         private async Task ProcessAIResponse(string query, string response)
         {
+            // Track any failed commands to inform the AI in the next prompt
+            List<string> failedCommands = new List<string>();
+
             // Process any scene commands in the response
             if (response.Contains("scene."))
             {
@@ -616,6 +558,13 @@ namespace AICodingAssistant.Editor
                 {
                     string command = match.Groups[1].Value;
                     string result = ProcessSceneCommand(command);
+                    
+                    // Check if the command failed (result contains "Failed")
+                    bool commandFailed = result.Contains("Failed");
+                    if (commandFailed)
+                    {
+                        failedCommands.Add($"{command}: {result}");
+                    }
                     
                     // Insert execution results below each command in the chat
                     chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
@@ -631,6 +580,24 @@ namespace AICodingAssistant.Editor
                 
                 // Repaint to show the updated response with command results
                 Repaint();
+                
+                // If there were failed commands, send a follow-up message to the AI
+                if (failedCommands.Count > 0)
+                {
+                    Debug.Log($"Detected {failedCommands.Count} failed scene commands");
+                    
+                    // Add a system message to inform about failed commands
+                    string failureMessage = "The following scene commands failed:\n\n";
+                    foreach (string failure in failedCommands)
+                    {
+                        failureMessage += $"- {failure}\n";
+                    }
+                    failureMessage += "\nPlease acknowledge these failures and adjust your approach accordingly in your next response.";
+                    
+                    // Add this as a system message that's visible to the AI but not the user
+                    // This will be included in the next AI prompt but won't be shown in the chat UI
+                    AddSystemMessage(failureMessage);
+                }
             }
             
             // Check for code edit suggestions
@@ -670,6 +637,25 @@ namespace AICodingAssistant.Editor
             }
             
             // Additional command processing can be added here
+        }
+        
+        /// <summary>
+        /// Adds a system message that's only visible to the AI, not to the user in the chat UI
+        /// </summary>
+        private void AddSystemMessage(string content)
+        {
+            // Create a special type of message that will be included in prompts to the AI
+            // but won't be displayed in the chat UI
+            ChatMessage systemMessage = new ChatMessage
+            {
+                Content = content,
+                IsUser = false,
+                Timestamp = DateTime.Now,
+                IsNew = false,
+                IsSystemMessage = true  // Mark as system message
+            };
+            
+            chatHistory.Add(systemMessage);
         }
         
         /// <summary>
@@ -1891,6 +1877,56 @@ namespace AICodingAssistant.Editor
             return text.Substring(startIndex, endIndex - startIndex).Trim();
         }
         
+        /// <summary>
+        /// Draws a single chat message in the UI
+        /// </summary>
+        private void DrawChatMessage(ChatMessage message)
+        {
+            // Calculate approximate height based on content
+            float contentHeight = EditorStyles.textArea.CalcHeight(
+                new GUIContent(message.Content), 
+                EditorGUIUtility.currentViewWidth - 40);
+            
+            // Minimum height
+            contentHeight = Mathf.Max(contentHeight, 40f);
+            
+            // Message container
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            
+            // Message header (User/AI + timestamp)
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                message.IsUser ? "You:" : "AI Assistant:", 
+                EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                message.Timestamp.ToString("HH:mm:ss"), 
+                GUILayout.Width(70));
+            EditorGUILayout.EndHorizontal();
+            
+            // Message content
+            GUIStyle messageStyle = new GUIStyle(EditorStyles.textArea);
+            messageStyle.wordWrap = true;
+            messageStyle.richText = true;
+            
+            // Format code blocks in AI responses for better readability
+            string formattedContent = message.IsUser 
+                ? message.Content 
+                : FormatCodeBlocks(message.Content);
+            
+            EditorGUILayout.TextArea(formattedContent, messageStyle, GUILayout.Height(contentHeight));
+            
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(5);
+            
+            // Ensure we scroll to the bottom when new messages arrive
+            if (Event.current.type == EventType.Layout && message.IsNew)
+            {
+                message.IsNew = false;
+                scrollPosition.y = float.MaxValue; // Scroll to bottom
+                Repaint();
+            }
+        }
+        
         #endregion
     }
     
@@ -1919,5 +1955,10 @@ namespace AICodingAssistant.Editor
         /// Whether this is a new message that should trigger auto-scrolling
         /// </summary>
         public bool IsNew { get; set; }
+        
+        /// <summary>
+        /// Whether this is a system message that's only visible to the AI, not to the user in the chat UI
+        /// </summary>
+        public bool IsSystemMessage { get; set; }
     }
 } 
