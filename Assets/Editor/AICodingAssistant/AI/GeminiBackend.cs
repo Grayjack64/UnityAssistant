@@ -14,7 +14,7 @@ namespace AICodingAssistant.AI
     public class GeminiBackend : AIBackend
     {
         private static readonly HttpClient client = new HttpClient();
-        private readonly string apiEndpoint = "https://generativelanguage.googleapis.com/v1/models";
+        private readonly string apiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models";
         private string apiKey;
         private string model = "gemini-2.0-flash"; // Default model
         
@@ -45,9 +45,19 @@ namespace AICodingAssistant.AI
         {
             try
             {
-                // Create request object
-                var request = new GeminiRequest
+                // Create request object with system instruction
+                var request = new GeminiRequestWithSystem
                 {
+                    SystemInstruction = new GeminiInstruction
+                    {
+                        Parts = new GeminiPart[]
+                        {
+                            new GeminiPart
+                            {
+                                Text = "You are an AI assistant for Unity game development. You provide helpful, accurate, and concise answers to questions about Unity and C# programming."
+                            }
+                        }
+                    },
                     Contents = new GeminiContent[]
                     {
                         new GeminiContent 
@@ -70,10 +80,13 @@ namespace AICodingAssistant.AI
                 
                 var url = $"{apiEndpoint}/{model}:generateContent?key={apiKey}";
                 
+                Debug.Log($"Sending request to Gemini API: {url.Replace(apiKey, "API_KEY_HIDDEN")}");
+                
                 var response = await client.PostAsync(url, content);
                 response.EnsureSuccessStatusCode();
                 
                 var responseBody = await response.Content.ReadAsStringAsync();
+                Debug.Log($"Raw Gemini response: {responseBody}");
                 var responseObj = JsonConvert.DeserializeObject<GeminiResponse>(responseBody);
                 
                 if (responseObj?.Candidates != null && responseObj.Candidates.Length > 0 &&
@@ -91,6 +104,10 @@ namespace AICodingAssistant.AI
             catch (Exception ex)
             {
                 Debug.LogError($"Error communicating with Gemini: {ex.Message}");
+                if (ex is HttpRequestException httpEx)
+                {
+                    Debug.LogError($"HTTP Status: {httpEx.StatusCode}");
+                }
                 return $"Error: {ex.Message}";
             }
         }
@@ -159,8 +176,8 @@ namespace AICodingAssistant.AI
         {
             return new string[]
             {
-                "Gemini 2.0 Flash (Fast)",
-                "Gemini 2.0 Pro (Powerful)",
+                "Gemini 2.0 Flash",
+                "Gemini 2.0 Pro",
                 "Gemini 2.5 Pro (Experimental)"
             };
         }
@@ -208,6 +225,23 @@ namespace AICodingAssistant.AI
     {
         [JsonProperty("contents")]
         public GeminiContent[] Contents { get; set; }
+    }
+    
+    [Serializable]
+    public class GeminiRequestWithSystem
+    {
+        [JsonProperty("system_instruction")]
+        public GeminiInstruction SystemInstruction { get; set; }
+        
+        [JsonProperty("contents")]
+        public GeminiContent[] Contents { get; set; }
+    }
+    
+    [Serializable]
+    public class GeminiInstruction
+    {
+        [JsonProperty("parts")]
+        public GeminiPart[] Parts { get; set; }
     }
     
     [Serializable]
