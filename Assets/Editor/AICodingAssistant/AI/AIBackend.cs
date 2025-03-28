@@ -43,6 +43,8 @@ namespace AICodingAssistant.AI
                     return new ClaudeBackend();
                 case AIBackendType.LocalLLM:
                     return new OllamaBackend();
+                case AIBackendType.Gemini:
+                    return new GeminiBackend();
                 default:
                     Debug.LogError($"Unknown backend type: {backendType}");
                     return null;
@@ -57,6 +59,7 @@ namespace AICodingAssistant.AI
     {
         Grok,
         Claude,
-        LocalLLM
+        LocalLLM,
+        Gemini
     }
 } 

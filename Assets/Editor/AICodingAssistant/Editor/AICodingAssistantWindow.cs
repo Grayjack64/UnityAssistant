@@ -51,6 +51,10 @@ namespace AICodingAssistant.Editor
         private bool isLoadingClaudeModels = false;
         private string ollamaUrl = "http://localhost:11434";
         private string ollamaModel = "llama2";
+        private string geminiApiKey = "";
+        private string geminiModel = "gemini-2.0-flash";
+        private string[] geminiModelOptions = new string[0];
+        private int selectedGeminiModelIndex = 0;
         private bool enableEnhancedConsole = true;
         private bool enableCodeIndexing = true;
         private int maxConsoleEntries = 500;
@@ -1393,6 +1397,41 @@ namespace AICodingAssistant.Editor
             EditorGUILayout.LabelField("AI Coding Assistant Settings", EditorStyles.boldLabel);
             EditorGUILayout.Space(10);
             
+            // AI Backend Selection
+            EditorGUILayout.LabelField("AI Backend Selection", EditorStyles.boldLabel);
+            string[] backendOptions = { "Claude (Anthropic)", "Grok (xAI)", "Local LLM (Ollama)", "Google Gemini" };
+            int currentBackendIndex = (int)selectedBackendType;
+            int newBackendIndex = EditorGUILayout.Popup("Backend:", currentBackendIndex, backendOptions);
+            
+            if (newBackendIndex != currentBackendIndex)
+            {
+                selectedBackendType = (AIBackendType)newBackendIndex;
+                currentBackend = AIBackend.CreateBackend(selectedBackendType);
+                
+                // Update backend-specific settings
+                if (currentBackend is OllamaBackend ollamaBackend)
+                {
+                    ollamaBackend.SetServerUrl(ollamaUrl);
+                    ollamaBackend.SetModel(ollamaModel);
+                }
+                else if (currentBackend is GrokBackend grokBackend && !string.IsNullOrEmpty(grokApiKey))
+                {
+                    grokBackend.SetApiKey(grokApiKey);
+                }
+                else if (currentBackend is ClaudeBackend claudeBackend && !string.IsNullOrEmpty(claudeApiKey))
+                {
+                    claudeBackend.SetApiKey(claudeApiKey);
+                    claudeBackend.SetModel(claudeModel);
+                }
+                else if (currentBackend is GeminiBackend geminiBackend && !string.IsNullOrEmpty(geminiApiKey))
+                {
+                    geminiBackend.SetApiKey(geminiApiKey);
+                    geminiBackend.SetModel(geminiModel);
+                }
+            }
+            
+            EditorGUILayout.Space(10);
+            
             // Conversation settings
             EditorGUILayout.LabelField("Conversation Settings", EditorStyles.boldLabel);
             maxHistoryMessages = EditorGUILayout.IntSlider("Max History Exchanges", maxHistoryMessages, 2, 20);
@@ -1400,147 +1439,215 @@ namespace AICodingAssistant.Editor
             EditorGUILayout.Space(10);
             
             // Grok settings
-            EditorGUILayout.LabelField("Grok (xAI) Settings", EditorStyles.boldLabel);
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
-            grokApiKey = EditorGUILayout.PasswordField(grokApiKey);
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.Space(10);
-            
-            // Claude settings
-            EditorGUILayout.LabelField("Claude (Anthropic) Settings", EditorStyles.boldLabel);
-            
-            // API Key
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
-            string newClaudeApiKey = EditorGUILayout.PasswordField(claudeApiKey);
-            if (newClaudeApiKey != claudeApiKey)
+            if (selectedBackendType == AIBackendType.Grok)
             {
-                claudeApiKey = newClaudeApiKey;
-                // Trigger refresh of available models when API key changes
-                if (!string.IsNullOrEmpty(claudeApiKey))
-                {
-                    EditorApplication.delayCall += RefreshClaudeModels;
-                }
-            }
-            EditorGUILayout.EndHorizontal();
-            
-            // Model selection dropdown
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
-            
-            // Show loading indicator or dropdown
-            if (isLoadingClaudeModels)
-            {
-                EditorGUILayout.LabelField("Loading models...", EditorStyles.boldLabel);
-            }
-            else
-            {
-                // Show dropdown if we have models, otherwise show a button to fetch models
-                if (claudeModelOptions.Length > 0)
-                {
-                    // Ensure our selected index is valid
-                    if (selectedClaudeModelIndex >= claudeModelOptions.Length)
-                    {
-                        selectedClaudeModelIndex = 0;
-                    }
-                    
-                    int newSelectedIndex = EditorGUILayout.Popup(selectedClaudeModelIndex, claudeModelOptions);
-                    if (newSelectedIndex != selectedClaudeModelIndex)
-                    {
-                        selectedClaudeModelIndex = newSelectedIndex;
-                        UpdateClaudeModelFromSelection();
-                    }
-                    
-                    // Show current model ID for debugging
-                    EditorGUILayout.LabelField($"ID: {claudeModel}", EditorStyles.miniLabel);
-                }
-                else
-                {
-                    // If we have an API key but no models, show a refresh button
-                    if (!string.IsNullOrEmpty(claudeApiKey))
-                    {
-                        EditorGUILayout.LabelField("No models loaded.", EditorStyles.boldLabel);
-                    }
-                    else
-                    {
-                        EditorGUILayout.LabelField("Enter API Key to load models");
-                    }
-                }
-            }
-            
-            // Refresh button
-            if (!isLoadingClaudeModels && !string.IsNullOrEmpty(claudeApiKey) && 
-                GUILayout.Button("⟳", GUILayout.Width(25)))
-            {
-                RefreshClaudeModels();
-            }
-            
-            EditorGUILayout.EndHorizontal();
-            
-            // Debug button for model loading
-            if (!string.IsNullOrEmpty(claudeApiKey))
-            {
+                EditorGUILayout.LabelField("Grok (xAI) Settings", EditorStyles.boldLabel);
                 EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button("Force Reload Models", GUILayout.Width(150)))
-                {
-                    // Clear the cache and force a reload
-                    try
-                    {
-                        Debug.Log("Forcing model reload...");
-                        if (currentBackend is ClaudeBackend claudeBackend)
-                        {
-                            // Access the backend's private fields via reflection to force a reload
-                            var field = typeof(ClaudeBackend).GetField("lastModelsFetchTime", 
-                                System.Reflection.BindingFlags.NonPublic | 
-                                System.Reflection.BindingFlags.Instance);
-                                
-                            if (field != null)
-                            {
-                                field.SetValue(claudeBackend, DateTime.MinValue);
-                                Debug.Log("Reset model cache timestamp");
-                            }
-                            
-                            var modelsField = typeof(ClaudeBackend).GetField("availableModels", 
-                                System.Reflection.BindingFlags.NonPublic | 
-                                System.Reflection.BindingFlags.Instance);
-                                
-                            if (modelsField != null)
-                            {
-                                modelsField.SetValue(claudeBackend, new List<ClaudeModel>());
-                                Debug.Log("Cleared model cache");
-                            }
-                        }
-                        
-                        // Now trigger a refresh
-                        claudeModelOptions = new string[0]; // Clear UI options
-                        RefreshClaudeModels();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"Error forcing model reload: {ex.Message}");
-                    }
-                }
-                
-                // Show model count for debugging
-                EditorGUILayout.LabelField($"Models: {claudeModelOptions.Length}", EditorStyles.miniLabel);
+                EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
+                grokApiKey = EditorGUILayout.PasswordField(grokApiKey);
                 EditorGUILayout.EndHorizontal();
             }
             
-            EditorGUILayout.Space(10);
+            // Claude settings
+            if (selectedBackendType == AIBackendType.Claude)
+            {
+                EditorGUILayout.LabelField("Claude (Anthropic) Settings", EditorStyles.boldLabel);
+                
+                // API Key
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
+                string newClaudeApiKey = EditorGUILayout.PasswordField(claudeApiKey);
+                if (newClaudeApiKey != claudeApiKey)
+                {
+                    claudeApiKey = newClaudeApiKey;
+                    // Trigger refresh of available models when API key changes
+                    if (!string.IsNullOrEmpty(claudeApiKey))
+                    {
+                        EditorApplication.delayCall += RefreshClaudeModels;
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                // Model selection dropdown
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
+                
+                // Show loading indicator or dropdown
+                if (isLoadingClaudeModels)
+                {
+                    EditorGUILayout.LabelField("Loading models...", EditorStyles.boldLabel);
+                }
+                else
+                {
+                    // Show dropdown if we have models, otherwise show a button to fetch models
+                    if (claudeModelOptions.Length > 0)
+                    {
+                        // Ensure our selected index is valid
+                        if (selectedClaudeModelIndex >= claudeModelOptions.Length)
+                        {
+                            selectedClaudeModelIndex = 0;
+                        }
+                        
+                        int newSelectedIndex = EditorGUILayout.Popup(selectedClaudeModelIndex, claudeModelOptions);
+                        if (newSelectedIndex != selectedClaudeModelIndex)
+                        {
+                            selectedClaudeModelIndex = newSelectedIndex;
+                            UpdateClaudeModelFromSelection();
+                        }
+                        
+                        // Show current model ID for debugging
+                        EditorGUILayout.LabelField($"ID: {claudeModel}", EditorStyles.miniLabel);
+                    }
+                    else
+                    {
+                        // If we have an API key but no models, show a refresh button
+                        if (!string.IsNullOrEmpty(claudeApiKey))
+                        {
+                            EditorGUILayout.LabelField("No models loaded.", EditorStyles.boldLabel);
+                        }
+                        else
+                        {
+                            EditorGUILayout.LabelField("Enter API Key to load models");
+                        }
+                    }
+                }
+                
+                // Refresh button
+                if (!isLoadingClaudeModels && !string.IsNullOrEmpty(claudeApiKey) && 
+                    GUILayout.Button("⟳", GUILayout.Width(25)))
+                {
+                    RefreshClaudeModels();
+                }
+                
+                EditorGUILayout.EndHorizontal();
+                
+                // Debug button for model loading
+                if (!string.IsNullOrEmpty(claudeApiKey))
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    if (GUILayout.Button("Force Reload Models", GUILayout.Width(150)))
+                    {
+                        // Clear the cache and force a reload
+                        try
+                        {
+                            Debug.Log("Forcing model reload...");
+                            if (currentBackend is ClaudeBackend claudeBackend)
+                            {
+                                // Access the backend's private fields via reflection to force a reload
+                                var field = typeof(ClaudeBackend).GetField("lastModelsFetchTime", 
+                                    System.Reflection.BindingFlags.NonPublic | 
+                                    System.Reflection.BindingFlags.Instance);
+                                    
+                                if (field != null)
+                                {
+                                    field.SetValue(claudeBackend, DateTime.MinValue);
+                                    Debug.Log("Reset model cache timestamp");
+                                }
+                                
+                                var modelsField = typeof(ClaudeBackend).GetField("availableModels", 
+                                    System.Reflection.BindingFlags.NonPublic | 
+                                    System.Reflection.BindingFlags.Instance);
+                                    
+                                if (modelsField != null)
+                                {
+                                    modelsField.SetValue(claudeBackend, new List<ClaudeModel>());
+                                    Debug.Log("Cleared model cache");
+                                }
+                            }
+                            
+                            // Now trigger a refresh
+                            claudeModelOptions = new string[0]; // Clear UI options
+                            RefreshClaudeModels();
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"Error forcing model reload: {ex.Message}");
+                        }
+                    }
+                    
+                    // Show model count for debugging
+                    EditorGUILayout.LabelField($"Models: {claudeModelOptions.Length}", EditorStyles.miniLabel);
+                    EditorGUILayout.EndHorizontal();
+                }
+            }
+            
+            // Gemini settings
+            if (selectedBackendType == AIBackendType.Gemini)
+            {
+                EditorGUILayout.LabelField("Google Gemini Settings", EditorStyles.boldLabel);
+                
+                // API Key
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
+                string newGeminiApiKey = EditorGUILayout.PasswordField(geminiApiKey);
+                if (newGeminiApiKey != geminiApiKey)
+                {
+                    geminiApiKey = newGeminiApiKey;
+                    
+                    // Update the backend
+                    if (currentBackend is GeminiBackend geminiBackend)
+                    {
+                        geminiBackend.SetApiKey(geminiApiKey);
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                // Model selection
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
+                
+                // Load model options if they're not loaded yet
+                if (geminiModelOptions.Length == 0 && currentBackend is GeminiBackend geminiBackend)
+                {
+                    geminiModelOptions = geminiBackend.GetModelDisplayNames();
+                    
+                    // Find the current model index
+                    string currentDisplayName = geminiBackend.GetCurrentModelDisplayName();
+                    selectedGeminiModelIndex = Array.IndexOf(geminiModelOptions, currentDisplayName);
+                    if (selectedGeminiModelIndex < 0)
+                    {
+                        selectedGeminiModelIndex = 0;
+                    }
+                }
+                
+                if (geminiModelOptions.Length > 0)
+                {
+                    int newModelIndex = EditorGUILayout.Popup(selectedGeminiModelIndex, geminiModelOptions);
+                    if (newModelIndex != selectedGeminiModelIndex)
+                    {
+                        selectedGeminiModelIndex = newModelIndex;
+                        
+                        // Update the model
+                        if (currentBackend is GeminiBackend geminiBackend)
+                        {
+                            string modelId = geminiBackend.GetModelIdFromDisplayName(geminiModelOptions[selectedGeminiModelIndex]);
+                            geminiModel = modelId;
+                            geminiBackend.SetModel(modelId);
+                        }
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.LabelField("No models available", EditorStyles.boldLabel);
+                }
+                
+                EditorGUILayout.EndHorizontal();
+            }
             
             // Ollama settings
-            EditorGUILayout.LabelField("Local LLM (Ollama) Settings", EditorStyles.boldLabel);
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("URL:", GUILayout.Width(80));
-            ollamaUrl = EditorGUILayout.TextField(ollamaUrl);
-            EditorGUILayout.EndHorizontal();
-            
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
-            ollamaModel = EditorGUILayout.TextField(ollamaModel);
-            EditorGUILayout.EndHorizontal();
+            if (selectedBackendType == AIBackendType.LocalLLM)
+            {
+                EditorGUILayout.LabelField("Local LLM (Ollama) Settings", EditorStyles.boldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("URL:", GUILayout.Width(80));
+                ollamaUrl = EditorGUILayout.TextField(ollamaUrl);
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
+                ollamaModel = EditorGUILayout.TextField(ollamaModel);
+                EditorGUILayout.EndHorizontal();
+            }
             
             EditorGUILayout.Space(10);
             
@@ -1773,6 +1880,8 @@ namespace AICodingAssistant.Editor
             claudeModel = EditorPrefs.GetString("AICodingAssistant_ClaudeModel", "claude-3-opus-20240229");
             ollamaUrl = EditorPrefs.GetString("AICodingAssistant_OllamaUrl", "http://localhost:11434");
             ollamaModel = EditorPrefs.GetString("AICodingAssistant_OllamaModel", "llama2");
+            geminiApiKey = EditorPrefs.GetString("AICodingAssistant_GeminiApiKey", "");
+            geminiModel = EditorPrefs.GetString("AICodingAssistant_GeminiModel", "gemini-2.0-flash");
             
             // Advanced settings
             enableCodeIndexing = EditorPrefs.GetBool("AICodingAssistant_EnableCodeIndexing", true);
@@ -1807,6 +1916,11 @@ namespace AICodingAssistant.Editor
                     EditorApplication.delayCall += RefreshClaudeModels;
                 }
             }
+            else if (currentBackend is GeminiBackend geminiBackend && !string.IsNullOrEmpty(geminiApiKey))
+            {
+                geminiBackend.SetApiKey(geminiApiKey);
+                geminiBackend.SetModel(geminiModel);
+            }
         }
         
         private void SaveSettings()
@@ -1816,6 +1930,8 @@ namespace AICodingAssistant.Editor
             EditorPrefs.SetString("AICodingAssistant_ClaudeModel", claudeModel);
             EditorPrefs.SetString("AICodingAssistant_OllamaUrl", ollamaUrl);
             EditorPrefs.SetString("AICodingAssistant_OllamaModel", ollamaModel);
+            EditorPrefs.SetString("AICodingAssistant_GeminiApiKey", geminiApiKey);
+            EditorPrefs.SetString("AICodingAssistant_GeminiModel", geminiModel);
             EditorPrefs.SetInt("AICodingAssistant_SelectedBackend", (int)selectedBackendType);
             
             // Advanced settings
@@ -1839,6 +1955,11 @@ namespace AICodingAssistant.Editor
             {
                 claudeBackend.SetApiKey(claudeApiKey);
                 claudeBackend.SetModel(claudeModel);
+            }
+            else if (currentBackend is GeminiBackend geminiBackend)
+            {
+                geminiBackend.SetApiKey(geminiApiKey);
+                geminiBackend.SetModel(geminiModel);
             }
         }
         
