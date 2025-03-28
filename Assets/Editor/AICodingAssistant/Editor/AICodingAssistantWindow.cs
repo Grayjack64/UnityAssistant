@@ -20,7 +20,7 @@ namespace AICodingAssistant.Editor
     {
         // Window state
         private int currentTabIndex = 0;
-        private string[] tabOptions = { "Chat", "Settings", "Scene Operations" };
+        private string[] tabOptions = { "Chat", "Settings" };
         private Vector2 scrollPosition;
         
         // AI settings
@@ -62,8 +62,12 @@ namespace AICodingAssistant.Editor
         private float codebaseInitProgress = 0f;
         private UnityEngine.Object scriptObject;
         
-        // Scene Operations tab
-        private SceneOperationsTab sceneOperationsTab;
+        // Scene operations data
+        private List<string> sceneHierarchy = new List<string>();
+        private List<string> materials = new List<string>();
+        private List<string> prefabs = new List<string>();
+        private DateTime lastSceneRefreshTime = DateTime.MinValue;
+        private TimeSpan sceneRefreshInterval = TimeSpan.FromSeconds(5);
         
         [MenuItem("Window/AI Coding Assistant")]
         public static void ShowWindow()
@@ -111,13 +115,62 @@ namespace AICodingAssistant.Editor
                           "• Answering questions about Unity development\n" +
                           "• Analyzing and improving your code\n" +
                           "• Generating new scripts based on your requirements\n" +
-                          "• Searching your codebase for relevant information\n\n" +
+                          "• Searching your codebase for relevant information\n" +
+                          "• Manipulating scene objects directly through chat commands\n\n" +
                           "Just describe what you need in natural language, and I'll help you out!",
                 Timestamp = DateTime.Now
             });
             
-            // Initialize the scene operations tab
-            sceneOperationsTab = new SceneOperationsTab();
+            // Initial scene data refresh
+            RefreshSceneData();
+            
+            // Subscribe to hierarchy changes
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
+        }
+        
+        private void OnDisable()
+        {
+            // Stop capturing console logs
+            consoleMonitor.StopCapturing();
+            
+            // Unsubscribe from compilation events
+            ChangeTracker.Instance.OnCompilationCompleted -= HandleCompilationCompleted;
+            
+            // Unsubscribe from hierarchy changes
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+            
+            // Save settings
+            SaveSettings();
+        }
+        
+        private void OnHierarchyChanged()
+        {
+            // Mark scene data for refresh on next repaint
+            lastSceneRefreshTime = DateTime.MinValue;
+        }
+        
+        private void RefreshSceneData()
+        {
+            try
+            {
+                // Get scene hierarchy
+                sceneHierarchy = AICodingAssistant.Scripts.SceneManipulationService.GetSceneHierarchy();
+                
+                // Get materials
+                var materialsResult = AICodingAssistant.Scripts.SceneManipulationService.GetAllMaterials();
+                materials = materialsResult.Success ? materialsResult.Value : new List<string>();
+                
+                // Get prefabs
+                var prefabsResult = AICodingAssistant.Scripts.SceneManipulationService.GetAllPrefabs();
+                prefabs = prefabsResult.Success ? prefabsResult.Value : new List<string>();
+                
+                // Update refresh time
+                lastSceneRefreshTime = DateTime.Now;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error refreshing scene data: {ex.Message}");
+            }
         }
         
         private async Task InitializeCodebaseContext()
@@ -142,20 +195,14 @@ namespace AICodingAssistant.Editor
             Repaint();
         }
         
-        private void OnDisable()
-        {
-            // Stop capturing console logs
-            consoleMonitor.StopCapturing();
-            
-            // Unsubscribe from compilation events
-            ChangeTracker.Instance.OnCompilationCompleted -= HandleCompilationCompleted;
-            
-            // Save settings
-            SaveSettings();
-        }
-        
         private void OnGUI()
         {
+            // Check if scene data needs refreshing
+            if (DateTime.Now - lastSceneRefreshTime > sceneRefreshInterval)
+            {
+                RefreshSceneData();
+            }
+            
             // Tab selection
             currentTabIndex = GUILayout.Toolbar(currentTabIndex, tabOptions);
             
@@ -183,9 +230,6 @@ namespace AICodingAssistant.Editor
                     case 1: // Settings
                         DrawSettingsTab();
                         break;
-                    case 2: // Scene Operations
-                        sceneOperationsTab.Draw();
-                        break;
                 }
                 
                 EditorGUILayout.EndScrollView();
@@ -195,7 +239,7 @@ namespace AICodingAssistant.Editor
         private void DrawUnifiedChatTab()
         {
             // Top section - Message area - dedicated scroll view for chat messages
-            float chatAreaHeight = position.height - 180; // Adjust to leave room for controls
+            float chatAreaHeight = position.height - 200; // Increased height for more scene operation buttons
             EditorGUILayout.BeginVertical(GUILayout.Height(chatAreaHeight));
             
             // Dedicated scroll view for messages with a distinctive background
@@ -227,7 +271,7 @@ namespace AICodingAssistant.Editor
             EditorGUILayout.Space(5);
             
             // Bottom section - Input area
-            EditorGUILayout.BeginVertical(GUILayout.Height(170));
+            EditorGUILayout.BeginVertical(GUILayout.Height(190)); // Increased height for scene operation controls
             
             // Draw controls for code context and console logs
             EditorGUILayout.BeginHorizontal();
@@ -270,8 +314,58 @@ namespace AICodingAssistant.Editor
             
             EditorGUILayout.EndHorizontal();
             
-            // Command buttons row
+            // Scene Operations Section - First row
             EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Scene Operations:", EditorStyles.boldLabel, GUILayout.Width(120));
+            
+            if (GUILayout.Button("List Scene", GUILayout.Width(100)))
+            {
+                string result = ProcessSceneCommand("scene.list");
+                AddSystemMessage($"Scene Hierarchy:\n```\n{result}\n```");
+            }
+            
+            if (GUILayout.Button("List Materials", GUILayout.Width(120)))
+            {
+                string result = ProcessSceneCommand("scene.materials");
+                AddSystemMessage($"Available Materials:\n```\n{result}\n```");
+            }
+            
+            if (GUILayout.Button("List Prefabs", GUILayout.Width(100)))
+            {
+                string result = ProcessSceneCommand("scene.prefabs");
+                AddSystemMessage($"Available Prefabs:\n```\n{result}\n```");
+            }
+            
+            if (GUILayout.Button("Refresh Scene Data", GUILayout.Width(150)))
+            {
+                RefreshSceneData();
+                AddSystemMessage("Scene data refreshed.");
+            }
+            
+            EditorGUILayout.EndHorizontal();
+            
+            // Scene Operations Section - Second row
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Create:", GUILayout.Width(50));
+            
+            if (GUILayout.Button("Empty Object", GUILayout.Width(100)))
+            {
+                string objName = "NewObject_" + DateTime.Now.ToString("HHmmss");
+                string result = ProcessSceneCommand($"scene.create {objName}");
+                AddSystemMessage($"Create empty object result:\n```\n{result}\n```");
+            }
+            
+            string[] primitiveOptions = { "Cube", "Sphere", "Capsule", "Cylinder", "Plane", "Quad" };
+            int primitiveIndex = EditorGUILayout.Popup(0, primitiveOptions, GUILayout.Width(80));
+            
+            if (GUILayout.Button("Create Primitive", GUILayout.Width(120)))
+            {
+                string objName = primitiveOptions[primitiveIndex] + "_" + DateTime.Now.ToString("HHmmss");
+                string result = ProcessSceneCommand($"scene.primitive {primitiveOptions[primitiveIndex]} {objName}");
+                AddSystemMessage($"Create primitive result:\n```\n{result}\n```");
+            }
+            
+            EditorGUILayout.LabelField("Search:", GUILayout.Width(50));
             
             // Search the codebase
             if (GUILayout.Button("Search Codebase", GUILayout.Width(120)))
@@ -286,27 +380,6 @@ namespace AICodingAssistant.Editor
                     // Add a system message about the missing search term
                     AddSystemMessage("I tried to search the codebase, but I couldn't determine what to search for.");
                 }
-            }
-            
-            // List scene contents
-            if (GUILayout.Button("List Scene", GUILayout.Width(100)))
-            {
-                string result = ProcessSceneCommand("scene.list");
-                AddSystemMessage($"Scene Hierarchy:\n```\n{result}\n```");
-            }
-            
-            // List materials
-            if (GUILayout.Button("List Materials", GUILayout.Width(120)))
-            {
-                string result = ProcessSceneCommand("scene.materials");
-                AddSystemMessage($"Available Materials:\n```\n{result}\n```");
-            }
-            
-            // List prefabs
-            if (GUILayout.Button("List Prefabs", GUILayout.Width(100)))
-            {
-                string result = ProcessSceneCommand("scene.prefabs");
-                AddSystemMessage($"Available Prefabs:\n```\n{result}\n```");
             }
             
             EditorGUILayout.EndHorizontal();
@@ -384,6 +457,12 @@ namespace AICodingAssistant.Editor
                 if (includeProjectSummary && (string.IsNullOrEmpty(projectSummary) || DateTime.Now - lastProjectSummaryUpdate > projectSummaryUpdateInterval))
                 {
                     await Task.Run(() => GenerateProjectSummary());
+                }
+                
+                // Refresh scene data if needed
+                if (DateTime.Now - lastSceneRefreshTime > sceneRefreshInterval)
+                {
+                    RefreshSceneData();
                 }
                 
                 // Process and prepare the prompt
@@ -476,6 +555,8 @@ namespace AICodingAssistant.Editor
             prompt.AppendLine("2. For component operations, use the exact component name (e.g., 'Rigidbody', not 'RigidBody')");
             prompt.AppendLine("3. For path parameters, use the full hierarchy path (e.g., 'Parent/Child')");
             prompt.AppendLine("4. For positions and rotations, specify if they're local with an optional 'true' parameter");
+            prompt.AppendLine("5. You can use scene commands directly in your responses; they will be automatically executed");
+            prompt.AppendLine("6. After each scene command, you'll receive feedback on whether it succeeded or failed");
             prompt.AppendLine();
 
             // Add project context information if requested
@@ -505,6 +586,29 @@ namespace AICodingAssistant.Editor
                     }
                     prompt.AppendLine();
                 }
+            }
+            
+            // Include scene information to provide context for scene manipulation
+            prompt.AppendLine("Current Scene Information:");
+            prompt.AppendLine($"Total GameObjects: {sceneHierarchy.Count}");
+            prompt.AppendLine($"Available Materials: {materials.Count}");
+            prompt.AppendLine($"Available Prefabs: {prefabs.Count}");
+            prompt.AppendLine();
+            
+            // Include a sample of GameObjects in the scene for better context
+            if (sceneHierarchy.Count > 0)
+            {
+                prompt.AppendLine("Top-level GameObjects:");
+                int count = 0;
+                foreach (var path in sceneHierarchy)
+                {
+                    if (!path.Contains("/") && count < 10) // Only top-level objects, max 10
+                    {
+                        prompt.AppendLine($"- {path}");
+                        count++;
+                    }
+                }
+                prompt.AppendLine();
             }
 
             // Include selected script content if available
@@ -564,6 +668,7 @@ namespace AICodingAssistant.Editor
         {
             // Track any failed commands to inform the AI in the next prompt
             List<string> failedCommands = new List<string>();
+            bool sceneWasModified = false;
 
             // Process any scene commands in the response
             if (response.Contains("scene."))
@@ -583,16 +688,25 @@ namespace AICodingAssistant.Editor
                         failedCommands.Add($"{command}: {result}");
                     }
                     
+                    // Mark scene as modified if a command was successful
+                    if (!commandFailed && command.StartsWith("scene.") && 
+                        !command.StartsWith("scene.list") && 
+                        !command.StartsWith("scene.materials") && 
+                        !command.StartsWith("scene.prefabs"))
+                    {
+                        sceneWasModified = true;
+                    }
+                    
                     // Insert execution results below each command in the chat
                     chatHistory[chatHistory.Count - 1].Content = chatHistory[chatHistory.Count - 1].Content.Replace(
                         match.Value, 
                         $"{match.Value}\n\n**Command Result:**\n```\n{result}\n```");
-                        
-                    // Refresh the scene operations tab if it's active
-                    if (currentTabIndex == 2) // Scene Operations tab
-                    {
-                        sceneOperationsTab.RefreshSceneHierarchy();
-                    }
+                }
+                
+                // Refresh scene data if any commands modified the scene
+                if (sceneWasModified)
+                {
+                    RefreshSceneData();
                 }
                 
                 // Repaint to show the updated response with command results
@@ -653,7 +767,17 @@ namespace AICodingAssistant.Editor
                 }
             }
             
-            // Additional command processing can be added here
+            // If the query is about scene manipulation, provide a tutorial message if no scene commands were used
+            if ((query.ToLowerInvariant().Contains("scene") || 
+                 query.ToLowerInvariant().Contains("object") || 
+                 query.ToLowerInvariant().Contains("gameobject") ||
+                 query.ToLowerInvariant().Contains("create") ||
+                 query.ToLowerInvariant().Contains("position") ||
+                 query.ToLowerInvariant().Contains("rotation")) && 
+                !response.Contains("`scene."))
+            {
+                AddSystemMessage("Tip: You can ask me to manipulate the scene directly using commands like `scene.create`, `scene.position`, etc. I'll execute these commands and show you the results.");
+            }
         }
         
         /// <summary>
@@ -1154,6 +1278,18 @@ namespace AICodingAssistant.Editor
                             scalePath, scaleX, scaleY, scaleZ);
                         return scaleResult.Message;
                         
+                    case "scene.components":
+                        if (parts.Length < 2)
+                            return "Usage: scene.components [path]";
+                            
+                        string componentsPath = parts[1];
+                        var componentsResult = AICodingAssistant.Scripts.SceneManipulationService.GetComponents(componentsPath);
+                        
+                        if (!componentsResult.Success)
+                            return componentsResult.Message;
+                            
+                        return $"Components on {componentsPath}:\n" + string.Join("\n", componentsResult.Value);
+                        
                     case "scene.addcomponent":
                         if (parts.Length < 3)
                             return "Usage: scene.addcomponent [path] [componentName]";
@@ -1209,6 +1345,20 @@ namespace AICodingAssistant.Editor
                         
                         var deleteResult = AICodingAssistant.Scripts.SceneManipulationService.DeleteGameObject(deletePath);
                         return deleteResult.Message;
+                        
+                    case "scene.materials":
+                        var materialsResult = AICodingAssistant.Scripts.SceneManipulationService.GetAllMaterials();
+                        if (!materialsResult.Success)
+                            return materialsResult.Message;
+                            
+                        return "Available Materials:\n" + string.Join("\n", materialsResult.Value);
+                        
+                    case "scene.prefabs":
+                        var prefabsResult = AICodingAssistant.Scripts.SceneManipulationService.GetAllPrefabs();
+                        if (!prefabsResult.Success)
+                            return prefabsResult.Message;
+                            
+                        return "Available Prefabs:\n" + string.Join("\n", prefabsResult.Value);
                         
                     default:
                         return $"Unknown scene command: {action}";
