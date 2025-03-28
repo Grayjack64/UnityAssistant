@@ -1066,8 +1066,22 @@ namespace AICodingAssistant.Editor
         /// </summary>
         private void ShowCreateScriptDialog(string codeContent)
         {
+            Debug.Log("ShowCreateScriptDialog called");
+            
             if (string.IsNullOrEmpty(codeContent))
+            {
+                Debug.LogError("Cannot create script: Code content is empty or null");
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = "❌ Failed to create script: The code content is empty",
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
                 return;
+            }
+            
+            Debug.Log($"Code content length: {codeContent.Length} characters");
                 
             // Detect class name for suggested file name
             string suggestedFileName = "NewScript.cs";
@@ -1075,33 +1089,63 @@ namespace AICodingAssistant.Editor
             if (classMatch.Success && classMatch.Groups.Count > 1)
             {
                 suggestedFileName = classMatch.Groups[1].Value + ".cs";
+                Debug.Log($"Detected class name: {classMatch.Groups[1].Value}");
+            }
+            else
+            {
+                Debug.Log("Could not detect class name from code content, using default name");
             }
             
             // Show warning if the file appears to already exist
             string suggestedPath = Path.Combine("Assets", suggestedFileName);
+            Debug.Log($"Initially suggested path: {suggestedPath}");
+            
             if (File.Exists(suggestedPath))
             {
+                Debug.Log($"File already exists at {suggestedPath}, suggesting alternative name");
                 suggestedPath = Path.Combine("Assets", "Generated_" + suggestedFileName);
+                Debug.Log($"Alternative suggested path: {suggestedPath}");
             }
             
-            // Prompt for file location
-            string savePath = EditorUtility.SaveFilePanel(
-                "Save Generated Script",
-                Path.GetDirectoryName(suggestedPath),
-                Path.GetFileName(suggestedPath),
-                "cs");
-                
-            if (!string.IsNullOrEmpty(savePath))
+            try
             {
+                // Prompt for file location
+                Debug.Log("Opening save file dialog...");
+                string savePath = EditorUtility.SaveFilePanel(
+                    "Save Generated Script",
+                    Path.GetDirectoryName(suggestedPath),
+                    Path.GetFileName(suggestedPath),
+                    "cs");
+                
+                Debug.Log($"User selected save path: {savePath}");
+                    
+                if (string.IsNullOrEmpty(savePath))
+                {
+                    Debug.Log("User cancelled the save dialog");
+                    return;
+                }
+                
                 // Convert absolute path to project-relative path if possible
                 string projectPath = Path.GetDirectoryName(Application.dataPath);
+                Debug.Log($"Project path: {projectPath}");
+                
                 if (savePath.StartsWith(projectPath))
                 {
-                    savePath = savePath.Substring(projectPath.Length + 1);
+                    string relativePath = savePath.Substring(projectPath.Length + 1);
+                    Debug.Log($"Converted to project-relative path: {relativePath}");
+                    savePath = relativePath;
                 }
+                else
+                {
+                    Debug.LogWarning($"Path is outside project: {savePath}. This may cause issues with Unity's asset management.");
+                }
+                
+                Debug.Log($"Attempting to create script at: {savePath}");
                 
                 if (CodeEditUtility.CreateScript(savePath, codeContent))
                 {
+                    Debug.Log($"Script creation successful at {savePath}");
+                    
                     chatHistory.Add(new ChatMessage
                     {
                         IsUser = false,
@@ -1114,28 +1158,71 @@ namespace AICodingAssistant.Editor
                     AddSystemMessage($"Script creation step completed successfully: Created {savePath}.\n\nPlease verify this script functions correctly before proceeding to the next step in your plan. Check for any compilation errors or runtime issues.");
                     
                     // Open the file in the editor
-                    UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(savePath);
-                    if (asset != null)
+                    try
                     {
-                        AssetDatabase.OpenAsset(asset);
+                        Debug.Log($"Attempting to open the created script in editor");
+                        UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(savePath);
+                        if (asset != null)
+                        {
+                            Debug.Log("Asset loaded successfully, opening in editor");
+                            AssetDatabase.OpenAsset(asset);
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Created asset not found at path: {savePath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error opening script in editor: {ex.Message}\nStack trace: {ex.StackTrace}");
                     }
                 }
                 else
                 {
+                    Debug.LogError($"Script creation failed at {savePath}");
+                    
+                    // Get the last error from the log if possible
+                    string errorDetails = "";
+                    try
+                    {
+                        var logEntries = EnhancedConsoleMonitor.GetRecentLogEntries(5);
+                        if (logEntries.Any(l => l.Contains("Error creating script")))
+                        {
+                            errorDetails = "\n\nError details: " + string.Join("\n", 
+                                logEntries.Where(l => l.Contains("Error creating script")));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error getting log entries: {ex.Message}");
+                    }
+                    
                     chatHistory.Add(new ChatMessage
                     {
                         IsUser = false,
-                        Content = $"❌ Failed to create script at {savePath}",
+                        Content = $"❌ Failed to create script at {savePath}{errorDetails}",
                         Timestamp = DateTime.Now,
                         IsNew = true
                     });
                     
                     // Add system message for step failure
-                    AddSystemMessage($"Script creation step failed: Could not create {savePath}.\n\nPlease troubleshoot this issue before continuing with your plan.");
+                    AddSystemMessage($"Script creation step failed: Could not create {savePath}.\n\nPlease troubleshoot this issue before continuing with your plan. Check the Unity console for detailed error messages.{errorDetails}");
                 }
-                
-                Repaint();
             }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Exception in ShowCreateScriptDialog: {ex.Message}\nStack trace: {ex.StackTrace}");
+                
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = $"❌ Exception while creating script: {ex.Message}",
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
+            }
+            
+            Repaint();
         }
         
         private string ExtractSearchTerm(string query)
@@ -2443,7 +2530,386 @@ namespace AICodingAssistant.Editor
                 return string.Empty;
             }
         }
-    }
+
+        private List<UnityCommand> ParseCommandsFromAIResponse(string response)
+        {
+            List<UnityCommand> commands = new List<UnityCommand>();
+            
+            try
+            {
+                // Debug the parsing process
+                Debug.Log("Parsing AI response for commands...");
+                Debug.Log($"Response length: {response?.Length ?? 0} characters");
+                
+                if (string.IsNullOrEmpty(response))
+                {
+                    Debug.LogWarning("AI response is empty or null - no commands to parse");
+                    return commands;
+                }
+
+                // Look for scene commands (```scene ... ```)
+                Regex sceneRegex = new Regex(@"```scene\s*\n(.*?)```", RegexOptions.Singleline);
+                MatchCollection sceneMatches = sceneRegex.Matches(response);
+                
+                Debug.Log($"Found {sceneMatches.Count} scene command blocks");
+                
+                foreach (Match match in sceneMatches)
+                {
+                    string commandText = match.Groups[1].Value.Trim();
+                    Debug.Log($"Processing scene command: {commandText}");
+                    commands.Add(new UnityCommand
+                    {
+                        Type = CommandType.SceneOperation,
+                        Command = commandText,
+                        OriginalText = match.Value
+                    });
+                }
+                
+                // Look for action commands (```action ... ```)
+                Regex actionRegex = new Regex(@"```action\s*\n(.*?)```", RegexOptions.Singleline);
+                MatchCollection actionMatches = actionRegex.Matches(response);
+                
+                Debug.Log($"Found {actionMatches.Count} action command blocks");
+                
+                foreach (Match match in actionMatches)
+                {
+                    string commandText = match.Groups[1].Value.Trim();
+                    Debug.Log($"Processing action command: {commandText}");
+                    commands.Add(new UnityCommand
+                    {
+                        Type = CommandType.ActionOperation,
+                        Command = commandText,
+                        OriginalText = match.Value
+                    });
+                }
+                
+                // Look for edit commands (```edit:filename.cs ... ```)
+                Regex editRegex = new Regex(@"```edit:(.*?)\s*\n(.*?)```", RegexOptions.Singleline);
+                MatchCollection editMatches = editRegex.Matches(response);
+                
+                Debug.Log($"Found {editMatches.Count} edit command blocks");
+                
+                foreach (Match match in editMatches)
+                {
+                    string filename = match.Groups[1].Value.Trim();
+                    string content = match.Groups[2].Value;
+                    
+                    Debug.Log($"Processing edit command for file: {filename}");
+                    Debug.Log($"Edit content length: {content.Length} characters");
+                    
+                    commands.Add(new UnityCommand
+                    {
+                        Type = CommandType.ScriptEdit,
+                        Command = filename,
+                        Content = content,
+                        OriginalText = match.Value
+                    });
+                }
+                
+                // Look for create script commands (```csharp ... ```)
+                Regex createScriptRegex = new Regex(@"```(?:csharp|cs)\s*\n(.*?)```", RegexOptions.Singleline);
+                MatchCollection createScriptMatches = createScriptRegex.Matches(response);
+                
+                Debug.Log($"Found {createScriptMatches.Count} create script blocks");
+                
+                foreach (Match match in createScriptMatches)
+                {
+                    string content = match.Groups[1].Value;
+                    Debug.Log($"Processing create script command, content length: {content.Length} characters");
+                    
+                    // Only add if it's not already part of an edit command that we already processed
+                    bool isPartOfEditCommand = false;
+                    foreach (Match editMatch in editMatches)
+                    {
+                        if (editMatch.Value.Contains(match.Value))
+                        {
+                            isPartOfEditCommand = true;
+                            Debug.Log("Skipping this create script block as it's already part of an edit command");
+                            break;
+                        }
+                    }
+                    
+                    if (!isPartOfEditCommand)
+                    {
+                        commands.Add(new UnityCommand
+                        {
+                            Type = CommandType.CreateScript,
+                            Content = content,
+                            OriginalText = match.Value
+                        });
+                    }
+                }
+                
+                Debug.Log($"Finished parsing. Found {commands.Count} total commands");
+                
+                return commands;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error parsing commands from AI response: {ex.Message}\nStack trace: {ex.StackTrace}");
+                return commands;
+            }
+        }
+
+        private void OnChatWindowRebuilt(float height)
+        {
+            _lastChatHeight = height;
+            Repaint();
+        }
+
+        /// <summary>
+        /// Processes AI message content for any commands
+        /// </summary>
+        private void ProcessAIMessage(string aiMessage)
+        {
+            Debug.Log("Processing AI message for commands");
+            
+            // Always update with the new message
+            chatHistory.Add(new ChatMessage
+            {
+                IsUser = false,
+                Content = aiMessage,
+                Timestamp = DateTime.Now,
+                IsNew = true
+            });
+            
+            // Process commands in AI response
+            List<UnityCommand> commands = ParseCommandsFromAIResponse(aiMessage);
+            
+            Debug.Log($"Found {commands.Count} commands in AI response");
+            
+            // If we have any "create script" blocks that aren't part of a script edit, show dialog
+            List<UnityCommand> createScriptCommands = commands
+                .Where(c => c.Type == CommandType.CreateScript)
+                .ToList();
+                
+            Debug.Log($"Found {createScriptCommands.Count} create script commands");
+            
+            if (createScriptCommands.Count == 1)
+            {
+                string codeBlock = createScriptCommands[0].Content;
+                Debug.Log($"Processing create script block with {codeBlock.Length} characters");
+                
+                // Clean up markdown code block syntax if present
+                if (codeBlock.StartsWith("```") && codeBlock.EndsWith("```"))
+                {
+                    Debug.Log("Cleaning up markdown code block syntax");
+                    int firstLineBreak = codeBlock.IndexOf('\n');
+                    int lastBackticks = codeBlock.LastIndexOf("```");
+                    if (firstLineBreak > 0 && lastBackticks > firstLineBreak)
+                    {
+                        codeBlock = codeBlock.Substring(firstLineBreak + 1, lastBackticks - firstLineBreak - 1).Trim();
+                        Debug.Log($"Cleaned code block is {codeBlock.Length} characters");
+                    }
+                }
+                
+                ShowCreateScriptDialog(codeBlock);
+            }
+            else if (createScriptCommands.Count > 1)
+            {
+                Debug.LogWarning($"Multiple create script blocks detected ({createScriptCommands.Count}). Only showing dialog for the first one.");
+                ShowCreateScriptDialog(createScriptCommands[0].Content);
+            }
+            
+            // Process edit script commands
+            List<UnityCommand> editScriptCommands = commands
+                .Where(c => c.Type == CommandType.ScriptEdit)
+                .ToList();
+                
+            Debug.Log($"Found {editScriptCommands.Count} edit script commands");
+            
+            foreach (var command in editScriptCommands)
+            {
+                string filename = command.Command;
+                string content = command.Content;
+                
+                Debug.Log($"Processing edit for file: {filename} with {content.Length} characters");
+                
+                // Apply edits to the script
+                ApplyScriptEdit(filename, content);
+            }
+            
+            // Process any scene operations
+            List<UnityCommand> sceneOperations = commands
+                .Where(c => c.Type == CommandType.SceneOperation)
+                .ToList();
+                
+            Debug.Log($"Found {sceneOperations.Count} scene operation commands");
+            
+            if (sceneOperations.Count > 0)
+            {
+                // Process at most ONE scene command
+                string sceneCommand = sceneOperations[0].Command;
+                Debug.Log($"Processing scene command: {sceneCommand}");
+                
+                // Add to operation queue instead of executing right away
+                AddOperationToQueue(sceneCommand);
+                
+                if (sceneOperations.Count > 1)
+                {
+                    Debug.LogWarning($"Multiple scene commands detected ({sceneOperations.Count}). Only the first one will be processed.");
+                    AddSystemMessage($"I notice you've included {sceneOperations.Count} scene commands in your response. I can only process one command at a time. I'll execute the first command: \"{sceneCommand}\" and you can follow up with the next command after we see the result.");
+                }
+            }
+            
+            // Process any action operations
+            List<UnityCommand> actionOperations = commands
+                .Where(c => c.Type == CommandType.ActionOperation)
+                .ToList();
+                
+            Debug.Log($"Found {actionOperations.Count} action operation commands");
+            
+            if (actionOperations.Count > 0)
+            {
+                foreach (var actionCommand in actionOperations)
+                {
+                    Debug.Log($"Processing action command: {actionCommand.Command}");
+                    ExecuteActionCommand(actionCommand.Command);
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Method to apply script edits from AI generated code
+        /// </summary>
+        /// <param name="filename">The name of the file to edit</param>
+        /// <param name="content">The content to use for the edit</param>
+        private void ApplyScriptEdit(string filename, string content)
+        {
+            Debug.Log($"ApplyScriptEdit called for file: {filename}");
+            
+            try
+            {
+                if (string.IsNullOrEmpty(filename))
+                {
+                    Debug.LogError("Cannot edit script: Filename is empty or null");
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = "❌ Failed to edit script: No filename provided",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                    return;
+                }
+                
+                if (string.IsNullOrEmpty(content))
+                {
+                    Debug.LogError("Cannot edit script: Content is empty or null");
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = "❌ Failed to edit script: The edit content is empty",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                    return;
+                }
+                
+                Debug.Log($"Content length: {content.Length} characters");
+                
+                // Normalize path to use correct directory separators
+                filename = filename.Replace('\\', '/');
+                Debug.Log($"Normalized filename: {filename}");
+                
+                // If the filename doesn't start with "Assets/", add it
+                if (!filename.StartsWith("Assets/") && !filename.StartsWith("/"))
+                {
+                    filename = "Assets/" + filename;
+                    Debug.Log($"Added Assets/ prefix: {filename}");
+                }
+                
+                // Create a CodeEdit object
+                var edit = new CodeEdit
+                {
+                    Type = EditType.FullFileEdit,
+                    FilePath = filename,
+                    Content = content
+                };
+                
+                Debug.Log($"Applying full file edit to {filename}");
+                
+                // Try to apply the edit
+                if (CodeEditUtility.ApplyEdits(filename, new List<CodeEdit> { edit }))
+                {
+                    Debug.Log($"Successfully edited {filename}");
+                    
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = $"✅ Successfully edited script: {filename}",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                    
+                    // Add system message for step verification
+                    AddSystemMessage($"Script edit step completed successfully: Modified {filename}.\n\nPlease verify this script functions correctly before proceeding to the next step in your plan. Check for any compilation errors or runtime issues.");
+                    
+                    // Try to open the file in the editor
+                    try
+                    {
+                        Debug.Log($"Attempting to open edited script in editor");
+                        UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filename);
+                        if (asset != null)
+                        {
+                            Debug.Log("Asset loaded successfully, opening in editor");
+                            AssetDatabase.OpenAsset(asset);
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"Edited asset not found at path: {filename}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error opening script in editor: {ex.Message}\nStack trace: {ex.StackTrace}");
+                    }
+                }
+                else
+                {
+                    Debug.LogError($"Failed to edit {filename}");
+                    
+                    // Get the last error from the log if possible
+                    string errorDetails = "";
+                    try
+                    {
+                        var logEntries = EnhancedConsoleMonitor.GetRecentLogEntries(5);
+                        if (logEntries.Any(l => l.Contains("Error applying code edits")))
+                        {
+                            errorDetails = "\n\nError details: " + string.Join("\n", 
+                                logEntries.Where(l => l.Contains("Error applying code edits")));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error getting log entries: {ex.Message}");
+                    }
+                    
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = $"❌ Failed to edit script: {filename}{errorDetails}",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                    
+                    // Add system message for step failure
+                    AddSystemMessage($"Script edit step failed: Could not modify {filename}.\n\nPlease troubleshoot this issue before continuing with your plan. Check the Unity console for detailed error messages.{errorDetails}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Exception in ApplyScriptEdit: {ex.Message}\nStack trace: {ex.StackTrace}");
+                
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = $"❌ Exception while editing script: {ex.Message}",
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
+            }
+        }
     
     /// <summary>
     /// Represents a message in the chat history

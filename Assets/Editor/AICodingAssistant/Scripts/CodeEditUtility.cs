@@ -94,6 +94,8 @@ namespace AICodingAssistant.Scripts
         {
             try
             {
+                Debug.Log($"Attempting to apply {edits.Count} edits to {filePath}");
+                
                 string originalContent = "";
                 string modifiedContent = "";
                 bool isNewFile = false;
@@ -119,8 +121,10 @@ namespace AICodingAssistant.Scripts
                 else
                 {
                     // Read existing file content
+                    Debug.Log($"Reading existing file content from {filePath}");
                     originalContent = File.ReadAllText(filePath);
                     modifiedContent = originalContent;
+                    Debug.Log($"Successfully read {originalContent.Length} characters from file");
                 }
                 
                 // Generate description of the edits
@@ -128,27 +132,45 @@ namespace AICodingAssistant.Scripts
                 editDescription.AppendLine($"Applied {edits.Count} edit(s):");
                 
                 // Apply edits (in correct order)
+                int editCount = 0;
                 foreach (var edit in edits)
                 {
+                    editCount++;
+                    Debug.Log($"Applying edit {editCount}/{edits.Count}, type: {edit.Type}");
+                    
                     switch (edit.Type)
                     {
                         case EditType.FullFileEdit:
                             if (edit.FilePath == filePath)
                             {
+                                Debug.Log("Replacing entire file content");
                                 modifiedContent = edit.Content;
                                 editDescription.AppendLine(isNewFile ? 
                                     "- Created file with content" : 
                                     "- Replaced entire file content");
                             }
+                            else
+                            {
+                                Debug.LogWarning($"FilePath mismatch: edit has path {edit.FilePath} but we're editing {filePath}");
+                            }
                             break;
                             
                         case EditType.ReplaceSnippet:
-                            modifiedContent = modifiedContent.Replace(edit.OldContent, edit.Content);
-                            string shortOldContent = edit.OldContent.Length > 50 ? edit.OldContent.Substring(0, 47) + "..." : edit.OldContent;
-                            editDescription.AppendLine($"- Replaced: \"{shortOldContent}\"");
+                            Debug.Log($"Replacing snippet: '{edit.OldContent?.Substring(0, Math.Min(50, edit.OldContent?.Length ?? 0))}...'");
+                            if (modifiedContent.Contains(edit.OldContent))
+                            {
+                                modifiedContent = modifiedContent.Replace(edit.OldContent, edit.Content);
+                                string shortOldContent = edit.OldContent.Length > 50 ? edit.OldContent.Substring(0, 47) + "..." : edit.OldContent;
+                                editDescription.AppendLine($"- Replaced: \"{shortOldContent}\"");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"Could not find snippet to replace. Snippet not found in file content.");
+                            }
                             break;
                             
                         case EditType.InsertAtLine:
+                            Debug.Log($"Inserting at line {edit.LineNumber}");
                             modifiedContent = InsertAtLine(modifiedContent, edit.LineNumber, edit.Content);
                             editDescription.AppendLine($"- Inserted code at line {edit.LineNumber}");
                             break;
@@ -156,29 +178,49 @@ namespace AICodingAssistant.Scripts
                 }
                 
                 // Only write if content actually changed or it's a new file
-                if (isNewFile || modifiedContent != originalContent)
+                Debug.Log("Checking if content changed...");
+                bool contentChanged = isNewFile || modifiedContent != originalContent;
+                Debug.Log($"Content changed: {contentChanged}");
+                
+                if (contentChanged)
                 {
                     // Create backup of original file if it exists
                     if (!isNewFile)
                     {
                         string backupPath = filePath + ".bak";
+                        Debug.Log($"Creating backup at {backupPath}");
                         File.WriteAllText(backupPath, originalContent);
                     }
                     
                     // Ensure directory exists
                     string directory = Path.GetDirectoryName(filePath);
+                    Debug.Log($"Ensuring directory exists: {directory}");
                     if (!Directory.Exists(directory))
                     {
+                        Debug.Log($"Creating directory: {directory}");
                         Directory.CreateDirectory(directory);
                     }
                     
                     // Write modified content
+                    Debug.Log($"Writing modified content to {filePath}...");
                     File.WriteAllText(filePath, modifiedContent);
+                    
+                    // Verify file was written
+                    if (File.Exists(filePath))
+                    {
+                        string newContent = File.ReadAllText(filePath);
+                        Debug.Log($"File written with {newContent.Length} characters");
+                    }
+                    else
+                    {
+                        Debug.LogError($"File was not created at {filePath} even though no exception was thrown");
+                    }
                     
                     // Track the change
                     ChangeTracker.Instance.RecordChange(filePath, isNewFile ? "Create" : "Edit", editDescription.ToString());
                     
                     // Refresh Asset Database
+                    Debug.Log("Refreshing AssetDatabase...");
                     AssetDatabase.Refresh();
                     if (isNewFile)
                     {
@@ -190,12 +232,16 @@ namespace AICodingAssistant.Scripts
                     }
                     return true;
                 }
+                else
+                {
+                    Debug.Log("No changes were made to the file content");
+                }
                 
                 return false;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"Error applying code edits: {ex.Message}");
+                Debug.LogError($"Error applying code edits: {ex.Message}\nStack trace: {ex.StackTrace}");
                 return false;
             }
         }
@@ -210,15 +256,49 @@ namespace AICodingAssistant.Scripts
         {
             try
             {
+                Debug.Log($"Attempting to create script at path: {filePath}");
+                
                 // Ensure directory exists
                 string directory = Path.GetDirectoryName(filePath);
+                Debug.Log($"Directory: {directory}");
+                
+                if (string.IsNullOrEmpty(directory))
+                {
+                    Debug.LogError("Invalid directory path: empty or null");
+                    return false;
+                }
+                
                 if (!Directory.Exists(directory))
                 {
-                    Directory.CreateDirectory(directory);
+                    Debug.Log($"Directory does not exist. Creating directory: {directory}");
+                    try
+                    {
+                        Directory.CreateDirectory(directory);
+                        Debug.Log($"Directory created successfully: {directory}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Failed to create directory: {ex.Message}\nStack trace: {ex.StackTrace}");
+                        return false;
+                    }
+                }
+                
+                // Check if file already exists
+                if (File.Exists(filePath))
+                {
+                    Debug.Log($"File already exists at {filePath}. Will be overwritten.");
                 }
                 
                 // Write file
+                Debug.Log($"Writing file content to {filePath}...");
                 File.WriteAllText(filePath, content);
+                
+                // Verify file was created
+                if (!File.Exists(filePath))
+                {
+                    Debug.LogError($"File was not created at {filePath} even though no exception was thrown.");
+                    return false;
+                }
                 
                 // Track the change
                 string className = "Unknown";
@@ -230,13 +310,14 @@ namespace AICodingAssistant.Scripts
                 ChangeTracker.Instance.RecordChange(filePath, "Create", $"Created new script '{className}'");
                 
                 // Refresh Asset Database
+                Debug.Log("Refreshing AssetDatabase...");
                 AssetDatabase.Refresh();
                 Debug.Log($"Successfully created script: {filePath}");
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"Error creating script: {ex.Message}");
+                Debug.LogError($"Error creating script: {ex.Message}\nStack trace: {ex.StackTrace}");
                 return false;
             }
         }
