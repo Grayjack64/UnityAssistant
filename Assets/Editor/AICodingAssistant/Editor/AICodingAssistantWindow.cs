@@ -2942,4 +2942,56 @@ namespace AICodingAssistant.Editor
         /// </summary>
         public bool IsSystemMessage { get; set; }
     }
+    
+    /// <summary>
+    /// Types of commands that can be executed in Unity
+    /// </summary>
+    public enum CommandType
+    {
+        /// <summary>
+        /// Operation to be performed in the Unity scene
+        /// </summary>
+        SceneOperation,
+        
+        /// <summary>
+        /// General action to be performed
+        /// </summary>
+        ActionOperation,
+        
+        /// <summary>
+        /// Edit an existing script
+        /// </summary>
+        ScriptEdit,
+        
+        /// <summary>
+        /// Create a new script
+        /// </summary>
+        CreateScript
+    }
+    
+    /// <summary>
+    /// Represents a command to be executed in Unity, extracted from AI responses
+    /// </summary>
+    public class UnityCommand
+    {
+        /// <summary>
+        /// Type of command
+        /// </summary>
+        public CommandType Type { get; set; }
+        
+        /// <summary>
+        /// Command text or filename
+        /// </summary>
+        public string Command { get; set; }
+        
+        /// <summary>
+        /// Content for script creation or editing
+        /// </summary>
+        public string Content { get; set; }
+        
+        /// <summary>
+        /// Original text from the AI response
+        /// </summary>
+        public string OriginalText { get; set; }
+    }
 }
