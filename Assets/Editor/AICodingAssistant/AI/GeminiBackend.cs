@@ -106,7 +106,7 @@ namespace AICodingAssistant.AI
                 Debug.LogError($"Error communicating with Gemini: {ex.Message}");
                 if (ex is HttpRequestException httpEx)
                 {
-                    Debug.LogError($"HTTP Status: {httpEx.StatusCode}");
+                    Debug.LogError($"HTTP error occurred. Check your API key and network connection.");
                 }
                 return $"Error: {ex.Message}";
             }
