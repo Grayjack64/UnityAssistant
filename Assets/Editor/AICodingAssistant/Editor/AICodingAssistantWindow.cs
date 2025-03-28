@@ -589,6 +589,20 @@ namespace AICodingAssistant.Editor
             prompt.AppendLine("8. Don't mention multiple steps in a single response - focus only on the current step");
             prompt.AppendLine();
             
+            // Add instructions about AI's execution responsibility
+            prompt.AppendLine("IMPORTANT: You MUST directly execute all scene commands and script creation yourself.");
+            prompt.AppendLine("DO NOT ask the user to perform actions like 'attach this script' or 'add this component'.");
+            prompt.AppendLine("Instead, YOU should use scene commands to perform these actions directly:");
+            prompt.AppendLine("- Use `scene.create`, `scene.primitive` to create game objects");
+            prompt.AppendLine("- Use `scene.addcomponent` to add components to objects");
+            prompt.AppendLine("- Generate scripts yourself using code blocks and apply them");
+            prompt.AppendLine("- Use `scene.setfield` to configure component properties");
+            prompt.AppendLine();
+            
+            prompt.AppendLine("Example of INCORRECT response: 'Create a player GameObject and attach the PlayerController script to it.'");
+            prompt.AppendLine("Example of CORRECT response: 'I'll create a player GameObject and add the necessary components to it: `scene.primitive Capsule Player`'");
+            prompt.AppendLine();
+            
             prompt.AppendLine("Important: The assistant processes only ONE scene command per response. After executing a command and seeing it succeed,");
             prompt.AppendLine("continue automatically with the next step in your plan in a new response. Don't wait for user confirmation on successful steps.");
             prompt.AppendLine();
@@ -824,6 +838,8 @@ namespace AICodingAssistant.Editor
                         stepCompletionMessage.AppendLine("1. Continue with your plan by sending a new response with ONLY the next command");
                         stepCompletionMessage.AppendLine("2. No need to wait for user confirmation when a step succeeds - proceed automatically");
                         stepCompletionMessage.AppendLine("3. Remember to execute only one command per response");
+                        stepCompletionMessage.AppendLine("4. YOU must directly execute all actions - do not ask the user to perform any actions");
+                        stepCompletionMessage.AppendLine("5. Always use scene commands (like `scene.addcomponent`) to add components or scripts");
                     }
                     else
                     {
@@ -854,6 +870,14 @@ namespace AICodingAssistant.Editor
                     failureMessage += "1. Identify why the command failed (e.g., incorrect path, invalid component name)\n";
                     failureMessage += "2. Suggest a correction for this specific step\n";
                     failureMessage += "3. Do not attempt subsequent steps until this issue is resolved\n";
+                    
+                    // Add specific required actions
+                    failureMessage.AppendLine("\n**Required actions:**");
+                    failureMessage.AppendLine("1. Identify the specific cause of the failure");
+                    failureMessage.AppendLine("2. Suggest a correction or alternative approach");
+                    failureMessage.AppendLine("3. DO NOT attempt subsequent steps until this issue is resolved");
+                    failureMessage.AppendLine("4. Remember that YOU must execute all actions directly via scene commands");
+                    failureMessage.AppendLine("5. Never ask the user to perform actions like 'attach scripts' or 'add components'");
                     
                     // Add this as a system message that's visible to the AI but not the user
                     AddSystemMessage(failureMessage);
