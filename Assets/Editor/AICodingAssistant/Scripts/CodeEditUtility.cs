@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
+using System.Linq;
 
 namespace AICodingAssistant.Scripts
 {
@@ -93,15 +94,34 @@ namespace AICodingAssistant.Scripts
         {
             try
             {
+                string originalContent = "";
+                string modifiedContent = "";
+                bool isNewFile = false;
+                
                 // Check if the file exists
                 if (!File.Exists(filePath))
                 {
-                    Debug.LogError($"File not found: {filePath}");
-                    return false;
+                    // File doesn't exist - check if we have a full file edit to create it
+                    bool hasFullFileEdit = edits.Any(e => e.Type == EditType.FullFileEdit);
+                    if (hasFullFileEdit)
+                    {
+                        Debug.Log($"File not found: {filePath} - Will create it with the provided content");
+                        isNewFile = true;
+                        originalContent = ""; // Empty for new files
+                        modifiedContent = ""; // Will be set with full content edit
+                    }
+                    else
+                    {
+                        Debug.LogError($"File not found: {filePath} - Cannot apply partial edits to non-existent file");
+                        return false;
+                    }
                 }
-                
-                string originalContent = File.ReadAllText(filePath);
-                string modifiedContent = originalContent;
+                else
+                {
+                    // Read existing file content
+                    originalContent = File.ReadAllText(filePath);
+                    modifiedContent = originalContent;
+                }
                 
                 // Generate description of the edits
                 StringBuilder editDescription = new StringBuilder();
@@ -116,7 +136,9 @@ namespace AICodingAssistant.Scripts
                             if (edit.FilePath == filePath)
                             {
                                 modifiedContent = edit.Content;
-                                editDescription.AppendLine("- Replaced entire file content");
+                                editDescription.AppendLine(isNewFile ? 
+                                    "- Created file with content" : 
+                                    "- Replaced entire file content");
                             }
                             break;
                             
@@ -133,22 +155,39 @@ namespace AICodingAssistant.Scripts
                     }
                 }
                 
-                // Only write if content actually changed
-                if (modifiedContent != originalContent)
+                // Only write if content actually changed or it's a new file
+                if (isNewFile || modifiedContent != originalContent)
                 {
-                    // Create backup of original file
-                    string backupPath = filePath + ".bak";
-                    File.WriteAllText(backupPath, originalContent);
+                    // Create backup of original file if it exists
+                    if (!isNewFile)
+                    {
+                        string backupPath = filePath + ".bak";
+                        File.WriteAllText(backupPath, originalContent);
+                    }
+                    
+                    // Ensure directory exists
+                    string directory = Path.GetDirectoryName(filePath);
+                    if (!Directory.Exists(directory))
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
                     
                     // Write modified content
                     File.WriteAllText(filePath, modifiedContent);
                     
                     // Track the change
-                    ChangeTracker.Instance.RecordChange(filePath, "Edit", editDescription.ToString());
+                    ChangeTracker.Instance.RecordChange(filePath, isNewFile ? "Create" : "Edit", editDescription.ToString());
                     
                     // Refresh Asset Database
                     AssetDatabase.Refresh();
-                    Debug.Log($"Successfully edited file: {filePath} (backup created at {backupPath})");
+                    if (isNewFile)
+                    {
+                        Debug.Log($"Successfully created file: {filePath}");
+                    }
+                    else
+                    {
+                        Debug.Log($"Successfully edited file: {filePath} (backup created at {filePath}.bak)");
+                    }
                     return true;
                 }
                 

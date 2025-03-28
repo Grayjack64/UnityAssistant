@@ -459,106 +459,121 @@ namespace AICodingAssistant.Editor
         
         private string BuildAIPrompt(string userMessage)
         {
-            StringBuilder promptBuilder = new StringBuilder();
+            StringBuilder prompt = new StringBuilder();
+
+            // Add System Instructions
+            prompt.AppendLine("# SYSTEM INSTRUCTIONS");
+            prompt.AppendLine("You are a helpful AI coding assistant for Unity development. Help the user with their Unity coding tasks. Your responses should be clear, concise, and tailored to Unity development best practices.");
+            prompt.AppendLine();
             
-            // System prompt defining capabilities
-            promptBuilder.AppendLine("You are an AI assistant integrated into Unity Editor. You can help with analyzing code, generating scripts, searching the codebase, and providing advice on Unity development.");
-            promptBuilder.AppendLine("For code, use format ```csharp ... ``` to highlight syntax.");
-            promptBuilder.AppendLine();
+            // Add instructions about code edits
+            prompt.AppendLine("## CODE CHANGES");
+            prompt.AppendLine("When suggesting code changes, you can:");
+            prompt.AppendLine("1. Edit existing files with clear instructions");
+            prompt.AppendLine("2. Create new files if needed using the following format:");
+            prompt.AppendLine();
+            prompt.AppendLine("```edit:Assets/Scripts/NewFileName.cs");
+            prompt.AppendLine("// Complete file content here");
+            prompt.AppendLine("using UnityEngine;");
+            prompt.AppendLine("// Rest of the file...");
+            prompt.AppendLine("```");
+            prompt.AppendLine();
+            prompt.AppendLine("When creating new files, always use the ```edit:PATH``` format with the full file content. The path should reflect proper Unity conventions (e.g., Scripts folder for scripts, Editor folder for editor scripts).");
             
-            // Add recent code changes and compilation status
-            string changesSummary = ChangeTracker.Instance.GetChangesSummary();
-            if (!string.IsNullOrEmpty(changesSummary) && changesSummary != "No recent code changes have been tracked.")
+            // Add instructions about compilation errors if there are any
+            if (ChangeTracker.Instance.HasCompilationErrors())
             {
-                promptBuilder.AppendLine("CODE CHANGE HISTORY AND COMPILATION STATUS:");
-                promptBuilder.AppendLine(changesSummary);
-                promptBuilder.AppendLine();
-            }
-            
-            // Add project summary if enabled
-            if (includeProjectSummary && !string.IsNullOrEmpty(projectSummary))
-            {
-                promptBuilder.AppendLine("PROJECT SUMMARY:");
-                promptBuilder.AppendLine(projectSummary);
-                promptBuilder.AppendLine();
-            }
-            
-            // Add selected script content if available
-            if (includeCodeContext && !string.IsNullOrEmpty(selectedScriptPath))
-            {
-                string scriptContent = ScriptUtility.ReadScriptContent(selectedScriptPath);
-                if (!string.IsNullOrEmpty(scriptContent))
+                var errors = ChangeTracker.Instance.GetRecentCompilationErrors();
+                prompt.AppendLine();
+                prompt.AppendLine("## COMPILATION STATUS");
+                prompt.AppendLine("⚠️ There are compilation errors in the project that need attention:");
+                foreach (var error in errors)
                 {
-                    promptBuilder.AppendLine($"SELECTED SCRIPT ({selectedScriptPath}):");
-                    promptBuilder.AppendLine("```csharp");
-                    promptBuilder.AppendLine(scriptContent);
-                    promptBuilder.AppendLine("```");
-                    promptBuilder.AppendLine();
+                    prompt.AppendLine($"- {error.Message} (at {error.File}:{error.Line})");
+                }
+                prompt.AppendLine();
+                prompt.AppendLine("If asked to help fix these errors, focus on that before addressing new feature requests.");
+            }
+            
+            // Add code change history and compilation status
+            var recentChanges = ChangeTracker.Instance.GetRecentChanges(5);
+            if (recentChanges.Count > 0)
+            {
+                prompt.AppendLine();
+                prompt.AppendLine("## CODE CHANGE HISTORY AND COMPILATION STATUS");
+                foreach (var change in recentChanges)
+                {
+                    string statusIcon = change.CompilationStatus == CompilationStatus.Success ? "✅" : 
+                                       change.CompilationStatus == CompilationStatus.Failed ? "❌" : 
+                                       change.CompilationStatus == CompilationStatus.Pending ? "⏳" : "❓";
                     
-                    // Add file-specific errors
-                    var fileErrors = consoleMonitor.GetErrorsForFile(selectedScriptPath);
-                    if (fileErrors.Count > 0)
+                    prompt.AppendLine($"{statusIcon} [{change.Timestamp.ToString("HH:mm:ss")}] {change.ChangeType} to {change.FilePath}");
+                    prompt.AppendLine($"    {change.Description.Replace("\n", "\n    ")}");
+                }
+                prompt.AppendLine();
+            }
+            
+            // Add Console logs if needed
+            if (includeConsoleLogs && consoleMonitor != null)
+            {
+                prompt.AppendLine();
+                prompt.AppendLine("## RECENT CONSOLE OUTPUT");
+                var logs = consoleMonitor.GetRecentLogs(10);
+                if (logs.Count > 0)
+                {
+                    foreach (var log in logs)
                     {
-                        promptBuilder.AppendLine("ERRORS FOR THIS FILE:");
-                        foreach (var error in fileErrors)
-                        {
-                            promptBuilder.AppendLine($"- Line {error.LineNumber}: {error.Message}");
-                        }
-                        promptBuilder.AppendLine();
+                        string logPrefix = log.LogType == LogType.Error ? "ERROR: " :
+                                         log.LogType == LogType.Warning ? "WARNING: " :
+                                         log.LogType == LogType.Exception ? "EXCEPTION: " : "";
+                        prompt.AppendLine($"[{log.Timestamp.ToString("HH:mm:ss")}] {logPrefix}{log.Message}");
                     }
                 }
-            }
-            
-            // Add console logs if enabled
-            if (includeConsoleLogs)
-            {
-                string consoleAnalysis = consoleMonitor.GetContextualAnalysis();
-                if (!string.IsNullOrEmpty(consoleAnalysis))
+                else
                 {
-                    promptBuilder.AppendLine("CONSOLE ANALYSIS:");
-                    promptBuilder.AppendLine(consoleAnalysis);
-                    promptBuilder.AppendLine();
+                    prompt.AppendLine("No recent console logs.");
                 }
+                prompt.AppendLine();
             }
             
-            // Add conversation history for context
-            int historyToInclude = Math.Min(chatHistory.Count, maxHistoryMessages * 2);
-            if (historyToInclude > 0)
+            // Add selected script content
+            if (includeCodeContext && !string.IsNullOrEmpty(selectedScriptPath))
             {
-                promptBuilder.AppendLine("CONVERSATION HISTORY:");
-                for (int i = chatHistory.Count - historyToInclude; i < chatHistory.Count; i++)
+                prompt.AppendLine();
+                prompt.AppendLine("## SELECTED SCRIPT");
+                prompt.AppendLine($"Path: {selectedScriptPath}");
+                prompt.AppendLine("```csharp");
+                prompt.AppendLine(ScriptUtility.ReadScriptContent(selectedScriptPath));
+                prompt.AppendLine("```");
+            }
+            
+            // Add project summary if it exists
+            if (includeProjectSummary && !string.IsNullOrEmpty(projectSummary))
+            {
+                prompt.AppendLine();
+                prompt.AppendLine("## PROJECT SUMMARY");
+                prompt.Append(projectSummary);
+            }
+            
+            // Add chat history (up to maxHistoryMessages)
+            int historyCount = Math.Min(chatHistory.Count, maxHistoryMessages);
+            if (historyCount > 0)
+            {
+                prompt.AppendLine();
+                prompt.AppendLine("## CHAT HISTORY");
+                for (int i = chatHistory.Count - historyCount; i < chatHistory.Count; i++)
                 {
                     var message = chatHistory[i];
-                    promptBuilder.AppendLine(message.IsUser ? $"User: {message.Content}" : $"Assistant: {message.Content}");
+                    prompt.AppendLine($"{(message.IsUser ? "User" : "AI")}: {message.Content}");
                 }
-                promptBuilder.AppendLine();
             }
             
             // Add the current user message
-            promptBuilder.AppendLine($"User: {userMessage}");
-            promptBuilder.AppendLine();
+            prompt.AppendLine();
+            prompt.AppendLine("## CURRENT MESSAGE");
+            prompt.AppendLine($"User: {userMessage}");
             
-            // Add system instructions for response
-            promptBuilder.AppendLine("When asked to perform actions like code analysis, script generation, or codebase search, provide the information requested.");
-            promptBuilder.AppendLine("If code changes are requested, clearly indicate what files to modify and how.");
-            promptBuilder.AppendLine("When generating scripts, provide complete and working code with all necessary using statements and proper Unity conventions.");
-            
-            // Add instructions for reviewing changes and compilation status
-            promptBuilder.AppendLine("\nIMPORTANT: Pay close attention to CODE CHANGE HISTORY AND COMPILATION STATUS section above.");
-            promptBuilder.AppendLine("When there are compilation errors after your changes:");
-            promptBuilder.AppendLine("1. Refer back to your recent changes that may have caused the errors");
-            promptBuilder.AppendLine("2. Analyze the specific error messages and their connection to your changes");
-            promptBuilder.AppendLine("3. Provide fixes that directly address those errors, not unrelated features");
-            promptBuilder.AppendLine("4. Explain how your proposed fixes relate to the errors and your previous changes");
-            
-            // Add instructions for code editing
-            promptBuilder.AppendLine("\nFOR CODE EDITS: You can suggest edits using these formats:");
-            promptBuilder.AppendLine("1. For full file edits: ```edit:Assets/Path/To/File.cs\n[COMPLETE FILE CONTENT]\n```");
-            promptBuilder.AppendLine("2. For replacing code: ```replace\n[OLD CODE]\n```\n```with\n[NEW CODE]\n```");
-            promptBuilder.AppendLine("3. For line insertions: ```insert:42\n[CODE TO INSERT AT LINE 42]\n```");
-            promptBuilder.AppendLine("The user will be prompted to review and apply your suggestions.");
-            
-            return promptBuilder.ToString();
+            return prompt.ToString();
         }
         
         private async Task ProcessAIResponse(string query, string response)
@@ -643,13 +658,28 @@ namespace AICodingAssistant.Editor
                 confirmMessage.AppendLine("The AI has suggested the following code edits:");
                 confirmMessage.AppendLine();
                 
+                bool containsNewFiles = false;
+                
                 foreach (var fileEntry in editsByFile)
                 {
-                    confirmMessage.AppendLine($"File: {fileEntry.Key}");
+                    bool fileExists = File.Exists(fileEntry.Key);
+                    if (!fileExists) 
+                    {
+                        containsNewFiles = true;
+                    }
+                    
+                    confirmMessage.AppendLine($"File: {fileEntry.Key} {(fileExists ? "" : "(New file)")}");
                     confirmMessage.AppendLine($"- {fileEntry.Value.Count} edit(s)");
                 }
                 
-                confirmMessage.AppendLine("\nWould you like to apply these edits? (Backups will be created)");
+                confirmMessage.AppendLine();
+                if (containsNewFiles)
+                {
+                    confirmMessage.AppendLine("NOTE: Some files don't exist yet and will be created.");
+                    confirmMessage.AppendLine();
+                }
+                
+                confirmMessage.AppendLine("Would you like to apply these edits? (Backups will be created for existing files)");
                 
                 if (EditorUtility.DisplayDialog("Code Edits Available", confirmMessage.ToString(), "Apply Edits", "Cancel"))
                 {
@@ -661,7 +691,7 @@ namespace AICodingAssistant.Editor
                             chatHistory.Add(new ChatMessage
                             {
                                 IsUser = false,
-                                Content = $"✅ Successfully applied edits to {fileEntry.Key}",
+                                Content = $"✅ Successfully {(File.Exists(fileEntry.Key) ? "applied edits to" : "created")} {fileEntry.Key}",
                                 Timestamp = DateTime.Now,
                                 IsNew = true
                             });
@@ -671,7 +701,7 @@ namespace AICodingAssistant.Editor
                             chatHistory.Add(new ChatMessage
                             {
                                 IsUser = false,
-                                Content = $"❌ Failed to apply edits to {fileEntry.Key}",
+                                Content = $"❌ Failed to {(File.Exists(fileEntry.Key) ? "apply edits to" : "create")} {fileEntry.Key}",
                                 Timestamp = DateTime.Now,
                                 IsNew = true
                             });
