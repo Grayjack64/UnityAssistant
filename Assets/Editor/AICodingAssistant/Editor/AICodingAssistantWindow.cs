@@ -523,9 +523,9 @@ namespace AICodingAssistant.Editor
                 {
                     foreach (var log in logs)
                     {
-                        string logPrefix = log.LogType == LogType.Error ? "ERROR: " :
-                                         log.LogType == LogType.Warning ? "WARNING: " :
-                                         log.LogType == LogType.Exception ? "EXCEPTION: " : "";
+                        string logPrefix = log.Type == LogType.Error ? "ERROR: " :
+                                         log.Type == LogType.Warning ? "WARNING: " :
+                                         log.Type == LogType.Exception ? "EXCEPTION: " : "";
                         prompt.AppendLine($"[{log.Timestamp.ToString("HH:mm:ss")}] {logPrefix}{log.Message}");
                     }
                 }

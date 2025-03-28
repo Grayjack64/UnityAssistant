@@ -5,6 +5,8 @@ using System.Text;
 using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEngine;
+using System.Text.RegularExpressions;
+using System.Linq;
 
 namespace AICodingAssistant.Scripts
 {
@@ -261,6 +263,66 @@ namespace AICodingAssistant.Scripts
         }
         
         /// <summary>
+        /// Check if there are any compilation errors
+        /// </summary>
+        /// <returns>True if there are compilation errors</returns>
+        public bool HasCompilationErrors()
+        {
+            return lastCompilationStatus == CompilationStatus.Failed && lastCompilationErrors.Count > 0;
+        }
+        
+        /// <summary>
+        /// Get recent compilation errors as structured data
+        /// </summary>
+        /// <returns>List of compilation error objects with file and line information</returns>
+        public List<CompilationErrorInfo> GetRecentCompilationErrors()
+        {
+            List<CompilationErrorInfo> errors = new List<CompilationErrorInfo>();
+            
+            // Parse compilation errors into structured format
+            foreach (string errorText in lastCompilationErrors)
+            {
+                var error = ParseCompilationError(errorText);
+                if (error != null)
+                {
+                    errors.Add(error);
+                }
+            }
+            
+            return errors;
+        }
+        
+        /// <summary>
+        /// Parse a compilation error string into structured format
+        /// </summary>
+        private CompilationErrorInfo ParseCompilationError(string errorText)
+        {
+            // Parse format like: "Assets/Path/To/File.cs(42,10): error CS1234: Error message"
+            var match = Regex.Match(errorText, @"(.*?)\((\d+),(\d+)\):(.*?):(.*?)$");
+            if (match.Success && match.Groups.Count > 5)
+            {
+                return new CompilationErrorInfo
+                {
+                    File = match.Groups[1].Value.Trim(),
+                    Line = int.Parse(match.Groups[2].Value),
+                    Column = int.Parse(match.Groups[3].Value),
+                    ErrorCode = match.Groups[4].Value.Trim(),
+                    Message = match.Groups[5].Value.Trim()
+                };
+            }
+            
+            // Fallback for different error formats
+            return new CompilationErrorInfo
+            {
+                Message = errorText,
+                File = "Unknown",
+                Line = 0,
+                Column = 0,
+                ErrorCode = "Unknown"
+            };
+        }
+        
+        /// <summary>
         /// Get the last compilation status
         /// </summary>
         public CompilationStatus GetLastCompilationStatus()
@@ -277,12 +339,58 @@ namespace AICodingAssistant.Scripts
         }
         
         /// <summary>
+        /// Get the list of recent changes, limited to the specified count
+        /// </summary>
+        /// <param name="count">Maximum number of changes to return</param>
+        /// <returns>List of the most recent changes</returns>
+        public List<ChangeRecord> GetRecentChanges(int count)
+        {
+            if (count <= 0 || count >= recentChanges.Count)
+            {
+                return recentChanges;
+            }
+            
+            return recentChanges.Take(count).ToList();
+        }
+        
+        /// <summary>
         /// Get compilation errors from the last compilation
         /// </summary>
         public List<string> GetLastCompilationErrors()
         {
             return lastCompilationErrors;
         }
+    }
+    
+    /// <summary>
+    /// Structured information about a compilation error
+    /// </summary>
+    public class CompilationErrorInfo
+    {
+        /// <summary>
+        /// Path to the file containing the error
+        /// </summary>
+        public string File { get; set; }
+        
+        /// <summary>
+        /// Line number of the error
+        /// </summary>
+        public int Line { get; set; }
+        
+        /// <summary>
+        /// Column number of the error
+        /// </summary>
+        public int Column { get; set; }
+        
+        /// <summary>
+        /// Error code (e.g., CS1234)
+        /// </summary>
+        public string ErrorCode { get; set; }
+        
+        /// <summary>
+        /// Error message
+        /// </summary>
+        public string Message { get; set; }
     }
     
     /// <summary>

@@ -390,6 +390,21 @@ namespace AICodingAssistant.Scripts
             
             return sb.ToString();
         }
+        
+        /// <summary>
+        /// Get a list of recent log entries
+        /// </summary>
+        /// <param name="count">Maximum number of logs to return</param>
+        /// <returns>List of recent console entries</returns>
+        public List<ConsoleEntry> GetRecentLogs(int count)
+        {
+            if (count <= 0 || entries.Count == 0)
+            {
+                return new List<ConsoleEntry>();
+            }
+            
+            return entries.TakeLast(Math.Min(count, entries.Count)).ToList();
+        }
     }
     
     /// <summary>
