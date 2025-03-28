@@ -65,7 +65,13 @@ namespace AICodingAssistant.AI
                     requestMessage.Content = content;
                     
                     var response = await client.SendAsync(requestMessage);
-                    response.EnsureSuccessStatusCode();
+                    
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        Debug.LogError($"Claude API error: {response.StatusCode} - {errorContent}");
+                        return $"Error communicating with Claude: {response.StatusCode} - {errorContent}";
+                    }
                     
                     var responseBody = await response.Content.ReadAsStringAsync();
                     var responseObj = JsonConvert.DeserializeObject<ClaudeResponse>(responseBody);

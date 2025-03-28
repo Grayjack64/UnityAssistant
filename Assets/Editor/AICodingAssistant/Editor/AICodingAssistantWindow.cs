@@ -878,6 +878,14 @@ namespace AICodingAssistant.Editor
                 ollamaBackend.SetServerUrl(ollamaUrl);
                 ollamaBackend.SetModel(ollamaModel);
             }
+            else if (currentBackend is GrokBackend grokBackend && !string.IsNullOrEmpty(grokApiKey))
+            {
+                grokBackend.SetApiKey(grokApiKey);
+            }
+            else if (currentBackend is ClaudeBackend claudeBackend && !string.IsNullOrEmpty(claudeApiKey))
+            {
+                claudeBackend.SetApiKey(claudeApiKey);
+            }
         }
         
         private void SaveSettings()
@@ -900,6 +908,14 @@ namespace AICodingAssistant.Editor
             {
                 ollamaBackend.SetServerUrl(ollamaUrl);
                 ollamaBackend.SetModel(ollamaModel);
+            }
+            else if (currentBackend is GrokBackend grokBackend)
+            {
+                grokBackend.SetApiKey(grokApiKey);
+            }
+            else if (currentBackend is ClaudeBackend claudeBackend)
+            {
+                claudeBackend.SetApiKey(claudeApiKey);
             }
         }
         

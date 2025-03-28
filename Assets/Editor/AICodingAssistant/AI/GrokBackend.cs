@@ -14,9 +14,9 @@ namespace AICodingAssistant.AI
     public class GrokBackend : AIBackend
     {
         private static readonly HttpClient client = new HttpClient();
-        private readonly string apiEndpoint = "https://api.groq.com/openai/v1/chat/completions";
+        private readonly string apiEndpoint = "https://api.x.ai/v1/chat/completions";
         private string apiKey;
-        private readonly string model = "mixtral-8x7b-32768";  // Using Mixtral as example - replace with actual Grok model
+        private readonly string model = "grok-2-latest";  // Using the latest Grok model
         
         /// <summary>
         /// Create a new GrokBackend with the stored API key
@@ -63,7 +63,13 @@ namespace AICodingAssistant.AI
                     requestMessage.Content = content;
                     
                     var response = await client.SendAsync(requestMessage);
-                    response.EnsureSuccessStatusCode();
+                    
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        Debug.LogError($"Grok API error: {response.StatusCode} - {errorContent}");
+                        return $"Error communicating with Grok: {response.StatusCode} - {errorContent}";
+                    }
                     
                     var responseBody = await response.Content.ReadAsStringAsync();
                     var responseObj = JsonConvert.DeserializeObject<GrokResponse>(responseBody);
