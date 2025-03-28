@@ -73,7 +73,7 @@ namespace AICodingAssistant.Editor
         public static void ShowWindow()
         {
             var window = GetWindow<AICodingAssistantWindow>("AI Coding Assistant");
-            window.minSize = new Vector2(450, 550);
+            window.minSize = new Vector2(450, 650);
             window.Show();
         }
         
@@ -238,8 +238,13 @@ namespace AICodingAssistant.Editor
         
         private void DrawUnifiedChatTab()
         {
+            // Calculate appropriate height for the chat area based on window size
+            // Chat area should take up approximately 50% of the window height
+            float totalHeight = position.height;
+            float chatAreaHeight = Math.Max(200, totalHeight * 0.5f);
+            float controlsHeight = Math.Min(250, totalHeight - chatAreaHeight - 20); // 20 for padding
+            
             // Top section - Message area - dedicated scroll view for chat messages
-            float chatAreaHeight = position.height - 200; // Increased height for more scene operation buttons
             EditorGUILayout.BeginVertical(GUILayout.Height(chatAreaHeight));
             
             // Dedicated scroll view for messages with a distinctive background
@@ -271,7 +276,7 @@ namespace AICodingAssistant.Editor
             EditorGUILayout.Space(5);
             
             // Bottom section - Input area
-            EditorGUILayout.BeginVertical(GUILayout.Height(190)); // Increased height for scene operation controls
+            EditorGUILayout.BeginVertical(GUILayout.Height(controlsHeight));
             
             // Draw controls for code context and console logs
             EditorGUILayout.BeginHorizontal();
@@ -404,15 +409,24 @@ namespace AICodingAssistant.Editor
             GUIStyle textAreaStyle = new GUIStyle(EditorStyles.textArea);
             textAreaStyle.wordWrap = true;
             
-            userQuery = EditorGUILayout.TextArea(userQuery, textAreaStyle, GUILayout.Height(80));
+            // Ensure there's space for the text area by calculating minimum height
+            float textAreaHeight = Mathf.Max(60, controlsHeight - 170); // Reserve space for other UI elements
+            userQuery = EditorGUILayout.TextArea(userQuery, textAreaStyle, GUILayout.Height(textAreaHeight));
             
             EditorGUILayout.EndHorizontal();
             
-            // Send button and status
-            EditorGUILayout.BeginHorizontal();
+            // Send button and status - Use a more prominent style for the send button
+            EditorGUILayout.BeginHorizontal(GUILayout.Height(40));
             
+            // Always ensure the send button has enough height to be visible
             EditorGUI.BeginDisabledGroup(string.IsNullOrEmpty(userQuery) || isProcessing);
-            if (GUILayout.Button("Send", GUILayout.Width(80), GUILayout.Height(30)))
+            
+            // Create a more visible send button
+            GUIStyle sendButtonStyle = new GUIStyle(GUI.skin.button);
+            sendButtonStyle.fontStyle = FontStyle.Bold;
+            sendButtonStyle.fontSize = 12;
+            
+            if (GUILayout.Button("SEND", sendButtonStyle, GUILayout.Width(80), GUILayout.Height(30)))
             {
                 SendChatMessage();
             }
