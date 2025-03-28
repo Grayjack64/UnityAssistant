@@ -40,12 +40,37 @@ namespace AICodingAssistant.Editor
         private double statusMessageTime = 0;
         private GUIStyle statusStyle;
         private bool isStatusError = false;
+        private bool hierarchyChanged = false;
 
         // Primitive type options for dropdown
         private readonly string[] primitiveTypes = new[] 
         { 
             "Cube", "Sphere", "Capsule", "Cylinder", "Plane", "Quad" 
         };
+
+        /// <summary>
+        /// Constructor to set up the event handlers
+        /// </summary>
+        public SceneOperationsTab()
+        {
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
+        }
+
+        /// <summary>
+        /// Callback for when the hierarchy changes
+        /// </summary>
+        private void OnHierarchyChanged()
+        {
+            hierarchyChanged = true;
+        }
+
+        /// <summary>
+        /// Clean up event handlers when this object is destroyed
+        /// </summary>
+        ~SceneOperationsTab()
+        {
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+        }
 
         /// <summary>
         /// Draws the Scene Operations tab UI
@@ -92,10 +117,10 @@ namespace AICodingAssistant.Editor
             // Auto-refresh when scene changes
             if (Event.current.type == EventType.Layout)
             {
-                if (EditorApplication.hierarchyChanged)
+                if (hierarchyChanged)
                 {
                     needsRefresh = true;
-                    EditorApplication.hierarchyChanged = false;
+                    hierarchyChanged = false;
                 }
             }
         }
