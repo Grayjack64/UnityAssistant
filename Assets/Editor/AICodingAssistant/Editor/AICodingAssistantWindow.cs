@@ -78,6 +78,9 @@ namespace AICodingAssistant.Editor
             // Initialize codebase context (async to avoid freezing the UI)
             codebaseContext = new CodebaseContext();
             
+            // Initialize change tracker (singleton pattern, just need to access it)
+            _ = ChangeTracker.Instance;
+            
             // Load settings
             LoadSettings();
             
@@ -411,6 +414,15 @@ namespace AICodingAssistant.Editor
             promptBuilder.AppendLine("For code, use format ```csharp ... ``` to highlight syntax.");
             promptBuilder.AppendLine();
             
+            // Add recent code changes and compilation status
+            string changesSummary = ChangeTracker.Instance.GetChangesSummary();
+            if (!string.IsNullOrEmpty(changesSummary) && changesSummary != "No recent code changes have been tracked.")
+            {
+                promptBuilder.AppendLine("CODE CHANGE HISTORY AND COMPILATION STATUS:");
+                promptBuilder.AppendLine(changesSummary);
+                promptBuilder.AppendLine();
+            }
+            
             // Add project summary if enabled
             if (includeProjectSummary && !string.IsNullOrEmpty(projectSummary))
             {
@@ -479,11 +491,34 @@ namespace AICodingAssistant.Editor
             promptBuilder.AppendLine("If code changes are requested, clearly indicate what files to modify and how.");
             promptBuilder.AppendLine("When generating scripts, provide complete and working code with all necessary using statements and proper Unity conventions.");
             
+            // Add instructions for reviewing changes and compilation status
+            promptBuilder.AppendLine("\nIMPORTANT: Pay close attention to CODE CHANGE HISTORY AND COMPILATION STATUS section above.");
+            promptBuilder.AppendLine("When there are compilation errors after your changes:");
+            promptBuilder.AppendLine("1. Refer back to your recent changes that may have caused the errors");
+            promptBuilder.AppendLine("2. Analyze the specific error messages and their connection to your changes");
+            promptBuilder.AppendLine("3. Provide fixes that directly address those errors, not unrelated features");
+            promptBuilder.AppendLine("4. Explain how your proposed fixes relate to the errors and your previous changes");
+            
+            // Add instructions for code editing
+            promptBuilder.AppendLine("\nFOR CODE EDITS: You can suggest edits using these formats:");
+            promptBuilder.AppendLine("1. For full file edits: ```edit:Assets/Path/To/File.cs\n[COMPLETE FILE CONTENT]\n```");
+            promptBuilder.AppendLine("2. For replacing code: ```replace\n[OLD CODE]\n```\n```with\n[NEW CODE]\n```");
+            promptBuilder.AppendLine("3. For line insertions: ```insert:42\n[CODE TO INSERT AT LINE 42]\n```");
+            promptBuilder.AppendLine("The user will be prompted to review and apply your suggestions.");
+            
             return promptBuilder.ToString();
         }
         
         private async Task ProcessAIResponse(string query, string response)
         {
+            // Check for code edit suggestions
+            var codeEdits = CodeEditUtility.ExtractEdits(response);
+            if (codeEdits.Count > 0)
+            {
+                // Show code edit dialog
+                ShowCodeEditDialog(codeEdits);
+            }
+            
             // Extract possible action commands using regex
             if (query.ToLowerInvariant().Contains("search for") || query.ToLowerInvariant().Contains("find in codebase"))
             {
@@ -504,12 +539,167 @@ namespace AICodingAssistant.Editor
             }
             else if (query.ToLowerInvariant().Contains("generate") || query.ToLowerInvariant().Contains("create script"))
             {
-                // Handle script generation request
-                // For now, the AI will just provide the code in the response
-                // User can copy and save manually or we could implement a "save this code" button
+                // Extract code blocks for potential script creation
+                string codeBlock = ExtractCodeBlock(response);
+                if (!string.IsNullOrEmpty(codeBlock))
+                {
+                    ShowCreateScriptDialog(codeBlock);
+                }
             }
             
             // Additional command processing can be added here
+        }
+        
+        /// <summary>
+        /// Shows a dialog to review and apply code edits
+        /// </summary>
+        private void ShowCodeEditDialog(List<CodeEdit> edits)
+        {
+            if (edits == null || edits.Count == 0)
+                return;
+                
+            // Group edits by file
+            Dictionary<string, List<CodeEdit>> editsByFile = new Dictionary<string, List<CodeEdit>>();
+            
+            foreach (var edit in edits)
+            {
+                if (edit.Type == EditType.FullFileEdit && !string.IsNullOrEmpty(edit.FilePath))
+                {
+                    if (!editsByFile.ContainsKey(edit.FilePath))
+                    {
+                        editsByFile[edit.FilePath] = new List<CodeEdit>();
+                    }
+                    
+                    editsByFile[edit.FilePath].Add(edit);
+                }
+                else if (edit.Type != EditType.FullFileEdit && !string.IsNullOrEmpty(selectedScriptPath))
+                {
+                    // For non-full-file edits, use the selected script
+                    if (!editsByFile.ContainsKey(selectedScriptPath))
+                    {
+                        editsByFile[selectedScriptPath] = new List<CodeEdit>();
+                    }
+                    
+                    editsByFile[selectedScriptPath].Add(edit);
+                }
+            }
+            
+            // If there are edits to apply
+            if (editsByFile.Count > 0)
+            {
+                StringBuilder confirmMessage = new StringBuilder();
+                confirmMessage.AppendLine("The AI has suggested the following code edits:");
+                confirmMessage.AppendLine();
+                
+                foreach (var fileEntry in editsByFile)
+                {
+                    confirmMessage.AppendLine($"File: {fileEntry.Key}");
+                    confirmMessage.AppendLine($"- {fileEntry.Value.Count} edit(s)");
+                }
+                
+                confirmMessage.AppendLine("\nWould you like to apply these edits? (Backups will be created)");
+                
+                if (EditorUtility.DisplayDialog("Code Edits Available", confirmMessage.ToString(), "Apply Edits", "Cancel"))
+                {
+                    // Apply edits to each file
+                    foreach (var fileEntry in editsByFile)
+                    {
+                        if (CodeEditUtility.ApplyEdits(fileEntry.Key, fileEntry.Value))
+                        {
+                            chatHistory.Add(new ChatMessage
+                            {
+                                IsUser = false,
+                                Content = $"✅ Successfully applied edits to {fileEntry.Key}",
+                                Timestamp = DateTime.Now,
+                                IsNew = true
+                            });
+                        }
+                        else
+                        {
+                            chatHistory.Add(new ChatMessage
+                            {
+                                IsUser = false,
+                                Content = $"❌ Failed to apply edits to {fileEntry.Key}",
+                                Timestamp = DateTime.Now,
+                                IsNew = true
+                            });
+                        }
+                    }
+                    
+                    Repaint();
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Shows a dialog to create a new script from AI-generated code
+        /// </summary>
+        private void ShowCreateScriptDialog(string codeContent)
+        {
+            if (string.IsNullOrEmpty(codeContent))
+                return;
+                
+            // Detect class name for suggested file name
+            string suggestedFileName = "NewScript.cs";
+            Match classMatch = Regex.Match(codeContent, @"class\s+(\w+)");
+            if (classMatch.Success && classMatch.Groups.Count > 1)
+            {
+                suggestedFileName = classMatch.Groups[1].Value + ".cs";
+            }
+            
+            // Show warning if the file appears to already exist
+            string suggestedPath = Path.Combine("Assets", suggestedFileName);
+            if (File.Exists(suggestedPath))
+            {
+                suggestedPath = Path.Combine("Assets", "Generated_" + suggestedFileName);
+            }
+            
+            // Prompt for file location
+            string savePath = EditorUtility.SaveFilePanel(
+                "Save Generated Script",
+                Path.GetDirectoryName(suggestedPath),
+                Path.GetFileName(suggestedPath),
+                "cs");
+                
+            if (!string.IsNullOrEmpty(savePath))
+            {
+                // Convert absolute path to project-relative path if possible
+                string projectPath = Path.GetDirectoryName(Application.dataPath);
+                if (savePath.StartsWith(projectPath))
+                {
+                    savePath = savePath.Substring(projectPath.Length + 1);
+                }
+                
+                if (CodeEditUtility.CreateScript(savePath, codeContent))
+                {
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = $"✅ Successfully created script at {savePath}",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                    
+                    // Open the file in the editor
+                    UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(savePath);
+                    if (asset != null)
+                    {
+                        AssetDatabase.OpenAsset(asset);
+                    }
+                }
+                else
+                {
+                    chatHistory.Add(new ChatMessage
+                    {
+                        IsUser = false,
+                        Content = $"❌ Failed to create script at {savePath}",
+                        Timestamp = DateTime.Now,
+                        IsNew = true
+                    });
+                }
+                
+                Repaint();
+            }
         }
         
         private string ExtractSearchTerm(string query)
