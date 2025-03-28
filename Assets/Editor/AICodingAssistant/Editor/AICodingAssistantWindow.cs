@@ -503,14 +503,14 @@ namespace AICodingAssistant.Editor
             // Include recent compilation errors if any
             if (codebaseInitialized && includeCodeContext)
             {
-                var changeTracker = FindObjectOfType<ChangeTracker>();
+                var changeTracker = ChangeTracker.Instance;
                 if (changeTracker != null && changeTracker.HasCompilationErrors())
                 {
                     prompt.AppendLine("Recent Compilation Errors:");
                     var errors = changeTracker.GetRecentCompilationErrors();
                     foreach (var error in errors)
                     {
-                        prompt.AppendLine($"- {error.File}: Line {error.Line}: {error.ErrorMessage} ({error.ErrorCode})");
+                        prompt.AppendLine($"- {error.File}: Line {error.Line}: {error.Message} ({error.ErrorCode})");
                     }
                     prompt.AppendLine();
                 }
