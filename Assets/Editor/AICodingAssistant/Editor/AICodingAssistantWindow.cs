@@ -576,6 +576,17 @@ namespace AICodingAssistant.Editor
             prompt.AppendLine("5. You can use scene commands directly in your responses; they will be automatically executed");
             prompt.AppendLine("6. After each scene command, you'll receive feedback on whether it succeeded or failed");
             prompt.AppendLine();
+            
+            // Add step-by-step verification workflow guidelines
+            prompt.AppendLine("When adding components or creating scripts, follow this step-by-step approach:");
+            prompt.AppendLine("1. Start by creating a clear plan of action with all the steps needed to accomplish the task");
+            prompt.AppendLine("2. Execute only ONE step at a time (one scene command or one script addition)");
+            prompt.AppendLine("3. After each step, verify it worked correctly by checking the command result");
+            prompt.AppendLine("4. Only proceed to the next step after confirming the previous step was successful");
+            prompt.AppendLine("5. If a step fails, troubleshoot that specific issue before attempting to continue");
+            prompt.AppendLine("6. After component addition, use `scene.components` to verify the component was added correctly");
+            prompt.AppendLine("7. For script additions, wait for feedback on whether the script compiled successfully");
+            prompt.AppendLine();
 
             // Add project context information if requested
             if (includeProjectSummary)
@@ -725,6 +736,52 @@ namespace AICodingAssistant.Editor
                 if (sceneWasModified)
                 {
                     RefreshSceneData();
+                    
+                    // Add a system message to inform the AI about the step completion status
+                    StringBuilder stepCompletionMessage = new StringBuilder();
+                    stepCompletionMessage.AppendLine("Step execution status:");
+                    
+                    if (failedCommands.Count == 0)
+                    {
+                        stepCompletionMessage.AppendLine("✅ Last scene operation step completed successfully.");
+                        
+                        // Add current scene state for verification context
+                        stepCompletionMessage.AppendLine("\nCurrent scene state after the operation:");
+                        stepCompletionMessage.AppendLine($"- Total GameObjects: {sceneHierarchy.Count}");
+                        
+                        // Include recently modified objects if possible
+                        var lastCommandPath = sceneCommandMatches.Cast<System.Text.RegularExpressions.Match>()
+                            .LastOrDefault()?.Groups[1].Value;
+                            
+                        if (!string.IsNullOrEmpty(lastCommandPath))
+                        {
+                            // Extract the object path from the command
+                            string objectPath = ExtractObjectPathFromCommand(lastCommandPath);
+                            
+                            if (!string.IsNullOrEmpty(objectPath) && sceneHierarchy.Contains(objectPath))
+                            {
+                                stepCompletionMessage.AppendLine($"- Modified object: {objectPath}");
+                                
+                                // Get components of the modified object
+                                var componentsResult = AICodingAssistant.Scripts.SceneManipulationService.GetComponents(objectPath);
+                                if (componentsResult.Success)
+                                {
+                                    stepCompletionMessage.AppendLine("- Components:");
+                                    foreach (var component in componentsResult.Value)
+                                    {
+                                        stepCompletionMessage.AppendLine($"  - {component}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        stepCompletionMessage.AppendLine("❌ Last scene operation step failed. Please fix before continuing.");
+                    }
+                    
+                    // Add this as a system message that's visible to the AI but not the user
+                    AddSystemMessage(stepCompletionMessage.ToString());
                 }
                 
                 // Repaint to show the updated response with command results
@@ -895,6 +952,9 @@ namespace AICodingAssistant.Editor
                                 Timestamp = DateTime.Now,
                                 IsNew = true
                             });
+                            
+                            // Add system message for step verification
+                            AddSystemMessage($"Script step completed successfully: {(File.Exists(fileEntry.Key) ? "Modified" : "Created")} {fileEntry.Key}.\n\nPlease verify this step worked correctly before proceeding to the next step in your plan.");
                         }
                         else
                         {
@@ -905,6 +965,9 @@ namespace AICodingAssistant.Editor
                                 Timestamp = DateTime.Now,
                                 IsNew = true
                             });
+                            
+                            // Add system message for step failure
+                            AddSystemMessage($"Script step failed: Could not {(File.Exists(fileEntry.Key) ? "modify" : "create")} {fileEntry.Key}.\n\nPlease troubleshoot this issue before continuing with your plan.");
                         }
                     }
                     
@@ -962,6 +1025,9 @@ namespace AICodingAssistant.Editor
                         IsNew = true
                     });
                     
+                    // Add system message for step verification
+                    AddSystemMessage($"Script creation step completed successfully: Created {savePath}.\n\nPlease verify this script functions correctly before proceeding to the next step in your plan. Check for any compilation errors or runtime issues.");
+                    
                     // Open the file in the editor
                     UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(savePath);
                     if (asset != null)
@@ -978,6 +1044,9 @@ namespace AICodingAssistant.Editor
                         Timestamp = DateTime.Now,
                         IsNew = true
                     });
+                    
+                    // Add system message for step failure
+                    AddSystemMessage($"Script creation step failed: Could not create {savePath}.\n\nPlease troubleshoot this issue before continuing with your plan.");
                 }
                 
                 Repaint();
@@ -2228,6 +2297,67 @@ namespace AICodingAssistant.Editor
         }
         
         #endregion
+        
+        /// <summary>
+        /// Extracts the object path from a scene command
+        /// </summary>
+        /// <param name="command">The scene command</param>
+        /// <returns>The extracted object path, or empty string if not found</returns>
+        private string ExtractObjectPathFromCommand(string command)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(command))
+                {
+                    return string.Empty;
+                }
+                
+                string[] parts = command.Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                
+                if (parts.Length < 2)
+                {
+                    return string.Empty;
+                }
+                
+                string action = parts[0].ToLower();
+                
+                // For most commands, the object path is the second parameter
+                switch (action)
+                {
+                    case "scene.create":
+                    case "scene.primitive":
+                        // For creation commands, return the name/path that was created
+                        return parts[1];
+                        
+                    case "scene.position":
+                    case "scene.rotation":
+                    case "scene.scale":
+                    case "scene.components":
+                    case "scene.addcomponent":
+                    case "scene.material":
+                    case "scene.delete":
+                        // For these commands, the object path is the second parameter
+                        return parts[1];
+                        
+                    case "scene.setfield":
+                        // For setfield, it's also the second parameter
+                        return parts[1];
+                        
+                    case "scene.prefab":
+                        // For prefab instantiation, if there's a parent path specified (3+ parts),
+                        // return the parent path, otherwise return empty (as we don't know the created object's path yet)
+                        return parts.Length > 2 ? parts[2] : string.Empty;
+                        
+                    default:
+                        return string.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error extracting object path from command: {ex.Message}");
+                return string.Empty;
+            }
+        }
     }
     
     /// <summary>
