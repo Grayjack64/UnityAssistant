@@ -167,34 +167,47 @@ namespace AICodingAssistant.Editor
                 EditorGUILayout.Space(5);
             }
             
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
-            
-            // Display current tab
-            switch (currentTabIndex)
+            // Display current tab without an outer scroll view for the Chat tab
+            // to prevent nested scroll views
+            if (currentTabIndex == 0) // Chat tab
             {
-                case 0: // Unified Chat
-                    DrawUnifiedChatTab();
-                    break;
-                case 1: // Settings
-                    DrawSettingsTab();
-                    break;
-                case 2: // Scene Operations
-                    sceneOperationsTab.Draw();
-                    break;
+                DrawUnifiedChatTab();
             }
-            
-            EditorGUILayout.EndScrollView();
+            else
+            {
+                // For other tabs, keep the scroll view
+                scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+                
+                switch (currentTabIndex)
+                {
+                    case 1: // Settings
+                        DrawSettingsTab();
+                        break;
+                    case 2: // Scene Operations
+                        sceneOperationsTab.Draw();
+                        break;
+                }
+                
+                EditorGUILayout.EndScrollView();
+            }
         }
-        
-        #region Unified Chat Interface
         
         private void DrawUnifiedChatTab()
         {
-            // Top section - Message area
-            float chatAreaHeight = position.height - 150;
+            // Top section - Message area - dedicated scroll view for chat messages
+            float chatAreaHeight = position.height - 180; // Adjust to leave room for controls
             EditorGUILayout.BeginVertical(GUILayout.Height(chatAreaHeight));
             
-            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
+            // Dedicated scroll view for messages with a distinctive background
+            var bgColor = EditorGUIUtility.isProSkin ? new Color(0.2f, 0.2f, 0.2f) : new Color(0.9f, 0.9f, 0.9f);
+            var oldBgColor = GUI.backgroundColor;
+            GUI.backgroundColor = bgColor;
+            
+            // Create a visual container for the scroll area
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(chatAreaHeight));
+            GUI.backgroundColor = oldBgColor;
+            
+            scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(chatAreaHeight));
             
             // Draw chat history
             foreach (var message in chatHistory)
@@ -207,10 +220,14 @@ namespace AICodingAssistant.Editor
             }
             
             EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical(); // End of visual container
             EditorGUILayout.EndVertical();
             
+            // Add a separator
+            EditorGUILayout.Space(5);
+            
             // Bottom section - Input area
-            EditorGUILayout.BeginVertical(GUILayout.Height(150));
+            EditorGUILayout.BeginVertical(GUILayout.Height(170));
             
             // Draw controls for code context and console logs
             EditorGUILayout.BeginHorizontal();
@@ -1202,8 +1219,6 @@ namespace AICodingAssistant.Editor
                 return $"Error processing scene command: {ex.Message}";
             }
         }
-        
-        #endregion
         
         #region Settings Tab
         
