@@ -22,6 +22,9 @@ namespace AICodingAssistant.Scripts
         private List<string> lastCompilationErrors = new List<string>();
         private DateTime lastCompilationTime = DateTime.MinValue;
         
+        // Event for compilation finished
+        public event Action<CompilationResult> OnCompilationCompleted;
+        
         // Singleton instance
         private static ChangeTracker instance;
         public static ChangeTracker Instance 
@@ -157,6 +160,34 @@ namespace AICodingAssistant.Scripts
             {
                 Debug.Log("ChangeTracker: Compilation succeeded.");
             }
+            
+            // Create compilation result and notify subscribers
+            var result = new CompilationResult
+            {
+                Success = !hasErrors,
+                Errors = new List<string>(lastCompilationErrors),
+                ChangesWithErrors = GetChangesWithErrors(),
+                CompletionTime = lastCompilationTime
+            };
+            
+            // Raise event if there are subscribers
+            OnCompilationCompleted?.Invoke(result);
+        }
+        
+        /// <summary>
+        /// Get all recent changes that have compilation errors
+        /// </summary>
+        private List<ChangeRecord> GetChangesWithErrors()
+        {
+            List<ChangeRecord> changesWithErrors = new List<ChangeRecord>();
+            foreach (var change in recentChanges)
+            {
+                if (change.CompilationStatus == CompilationStatus.Failed && change.CompilationErrors.Count > 0)
+                {
+                    changesWithErrors.Add(change);
+                }
+            }
+            return changesWithErrors;
         }
         
         /// <summary>
@@ -252,6 +283,32 @@ namespace AICodingAssistant.Scripts
         {
             return lastCompilationErrors;
         }
+    }
+    
+    /// <summary>
+    /// Result of a compilation process
+    /// </summary>
+    public class CompilationResult
+    {
+        /// <summary>
+        /// Whether compilation was successful
+        /// </summary>
+        public bool Success { get; set; }
+        
+        /// <summary>
+        /// List of all compilation errors
+        /// </summary>
+        public List<string> Errors { get; set; } = new List<string>();
+        
+        /// <summary>
+        /// Changes that have associated errors
+        /// </summary>
+        public List<ChangeRecord> ChangesWithErrors { get; set; } = new List<ChangeRecord>();
+        
+        /// <summary>
+        /// When compilation completed
+        /// </summary>
+        public DateTime CompletionTime { get; set; }
     }
     
     /// <summary>

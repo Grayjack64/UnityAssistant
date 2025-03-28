@@ -45,6 +45,10 @@ namespace AICodingAssistant.Editor
         // Settings
         private string grokApiKey = "";
         private string claudeApiKey = "";
+        private string claudeModel = "claude-3-opus-20240229";
+        private string[] claudeModelOptions = new string[0];
+        private int selectedClaudeModelIndex = 0;
+        private bool isLoadingClaudeModels = false;
         private string ollamaUrl = "http://localhost:11434";
         private string ollamaModel = "llama2";
         private bool enableEnhancedConsole = true;
@@ -80,6 +84,9 @@ namespace AICodingAssistant.Editor
             
             // Initialize change tracker (singleton pattern, just need to access it)
             _ = ChangeTracker.Instance;
+            
+            // Subscribe to compilation events
+            ChangeTracker.Instance.OnCompilationCompleted += HandleCompilationCompleted;
             
             // Load settings
             LoadSettings();
@@ -134,6 +141,9 @@ namespace AICodingAssistant.Editor
             // Stop capturing console logs
             consoleMonitor.StopCapturing();
             
+            // Unsubscribe from compilation events
+            ChangeTracker.Instance.OnCompilationCompleted -= HandleCompilationCompleted;
+            
             // Save settings
             SaveSettings();
         }
@@ -183,6 +193,48 @@ namespace AICodingAssistant.Editor
             {
                 selectedBackendType = newBackendType;
                 currentBackend = AIBackend.CreateBackend(selectedBackendType);
+                
+                // If switching to Claude, refresh model list if API key is configured
+                if (selectedBackendType == AIBackendType.Claude && !string.IsNullOrEmpty(claudeApiKey))
+                {
+                    // Refresh models with a slight delay to ensure the backend is initialized
+                    EditorApplication.delayCall += RefreshClaudeModels;
+                }
+            }
+            
+            // Show current model if using Claude
+            if (selectedBackendType == AIBackendType.Claude)
+            {
+                EditorGUILayout.EndHorizontal();
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("Current Model:", GUILayout.Width(100));
+                
+                if (isLoadingClaudeModels)
+                {
+                    EditorGUILayout.LabelField("Loading models...");
+                }
+                else
+                {
+                    string modelDisplayName = "Unknown";
+                    foreach (var option in claudeModelOptions)
+                    {
+                        // Find display name that corresponds to current model ID
+                        if (claudeModelOptions.Length > selectedClaudeModelIndex && 
+                            selectedClaudeModelIndex >= 0)
+                        {
+                            modelDisplayName = claudeModelOptions[selectedClaudeModelIndex];
+                        }
+                    }
+                    
+                    EditorGUILayout.LabelField(modelDisplayName);
+                    
+                    // Add a button to manage models
+                    if (GUILayout.Button("Change Model", GUILayout.Width(100)))
+                    {
+                        currentTabIndex = 1; // Switch to settings tab
+                        GUI.FocusControl(null); // Clear focus to ensure UI updates
+                    }
+                }
             }
             EditorGUILayout.EndHorizontal();
             
@@ -946,10 +998,123 @@ namespace AICodingAssistant.Editor
             
             // Claude settings
             EditorGUILayout.LabelField("Claude (Anthropic) Settings", EditorStyles.boldLabel);
+            
+            // API Key
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("API Key:", GUILayout.Width(80));
-            claudeApiKey = EditorGUILayout.PasswordField(claudeApiKey);
+            string newClaudeApiKey = EditorGUILayout.PasswordField(claudeApiKey);
+            if (newClaudeApiKey != claudeApiKey)
+            {
+                claudeApiKey = newClaudeApiKey;
+                // Trigger refresh of available models when API key changes
+                if (!string.IsNullOrEmpty(claudeApiKey))
+                {
+                    EditorApplication.delayCall += RefreshClaudeModels;
+                }
+            }
             EditorGUILayout.EndHorizontal();
+            
+            // Model selection dropdown
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Model:", GUILayout.Width(80));
+            
+            // Show loading indicator or dropdown
+            if (isLoadingClaudeModels)
+            {
+                EditorGUILayout.LabelField("Loading models...", EditorStyles.boldLabel);
+            }
+            else
+            {
+                // Show dropdown if we have models, otherwise show a button to fetch models
+                if (claudeModelOptions.Length > 0)
+                {
+                    // Ensure our selected index is valid
+                    if (selectedClaudeModelIndex >= claudeModelOptions.Length)
+                    {
+                        selectedClaudeModelIndex = 0;
+                    }
+                    
+                    int newSelectedIndex = EditorGUILayout.Popup(selectedClaudeModelIndex, claudeModelOptions);
+                    if (newSelectedIndex != selectedClaudeModelIndex)
+                    {
+                        selectedClaudeModelIndex = newSelectedIndex;
+                        UpdateClaudeModelFromSelection();
+                    }
+                    
+                    // Show current model ID for debugging
+                    EditorGUILayout.LabelField($"ID: {claudeModel}", EditorStyles.miniLabel);
+                }
+                else
+                {
+                    // If we have an API key but no models, show a refresh button
+                    if (!string.IsNullOrEmpty(claudeApiKey))
+                    {
+                        EditorGUILayout.LabelField("No models loaded.", EditorStyles.boldLabel);
+                    }
+                    else
+                    {
+                        EditorGUILayout.LabelField("Enter API Key to load models");
+                    }
+                }
+            }
+            
+            // Refresh button
+            if (!isLoadingClaudeModels && !string.IsNullOrEmpty(claudeApiKey) && 
+                GUILayout.Button("⟳", GUILayout.Width(25)))
+            {
+                RefreshClaudeModels();
+            }
+            
+            EditorGUILayout.EndHorizontal();
+            
+            // Debug button for model loading
+            if (!string.IsNullOrEmpty(claudeApiKey))
+            {
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("Force Reload Models", GUILayout.Width(150)))
+                {
+                    // Clear the cache and force a reload
+                    try
+                    {
+                        Debug.Log("Forcing model reload...");
+                        if (currentBackend is ClaudeBackend claudeBackend)
+                        {
+                            // Access the backend's private fields via reflection to force a reload
+                            var field = typeof(ClaudeBackend).GetField("lastModelsFetchTime", 
+                                System.Reflection.BindingFlags.NonPublic | 
+                                System.Reflection.BindingFlags.Instance);
+                                
+                            if (field != null)
+                            {
+                                field.SetValue(claudeBackend, DateTime.MinValue);
+                                Debug.Log("Reset model cache timestamp");
+                            }
+                            
+                            var modelsField = typeof(ClaudeBackend).GetField("availableModels", 
+                                System.Reflection.BindingFlags.NonPublic | 
+                                System.Reflection.BindingFlags.Instance);
+                                
+                            if (modelsField != null)
+                            {
+                                modelsField.SetValue(claudeBackend, new List<ClaudeModel>());
+                                Debug.Log("Cleared model cache");
+                            }
+                        }
+                        
+                        // Now trigger a refresh
+                        claudeModelOptions = new string[0]; // Clear UI options
+                        RefreshClaudeModels();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"Error forcing model reload: {ex.Message}");
+                    }
+                }
+                
+                // Show model count for debugging
+                EditorGUILayout.LabelField($"Models: {claudeModelOptions.Length}", EditorStyles.miniLabel);
+                EditorGUILayout.EndHorizontal();
+            }
             
             EditorGUILayout.Space(10);
             
@@ -1043,10 +1208,157 @@ namespace AICodingAssistant.Editor
             }
         }
         
+        /// <summary>
+        /// Refresh the list of available Claude models
+        /// </summary>
+        private async void RefreshClaudeModels()
+        {
+            if (string.IsNullOrEmpty(claudeApiKey) || isLoadingClaudeModels)
+            {
+                Debug.Log("Cannot fetch Claude models: API key not configured or already loading models");
+                return;
+            }
+            
+            isLoadingClaudeModels = true;
+            Repaint(); // Ensure UI updates to show loading state
+            
+            try
+            {
+                Debug.Log("Fetching Claude models...");
+                
+                // Ensure we have a Claude backend instance
+                ClaudeBackend claudeBackend = null;
+                
+                if (currentBackend is ClaudeBackend)
+                {
+                    claudeBackend = (ClaudeBackend)currentBackend;
+                }
+                else
+                {
+                    claudeBackend = new ClaudeBackend();
+                    claudeBackend.SetApiKey(claudeApiKey);
+                }
+                
+                // Load models
+                var models = await claudeBackend.ListModels();
+                Debug.Log($"Retrieved {models.Count} Claude models from API");
+                
+                // Update UI options
+                claudeModelOptions = new string[models.Count];
+                for (int i = 0; i < models.Count; i++)
+                {
+                    claudeModelOptions[i] = models[i].DisplayName;
+                    Debug.Log($"Model {i}: {models[i].DisplayName} (ID: {models[i].Id})");
+                    
+                    // If this is the currently selected model, update the index
+                    if (models[i].Id == claudeModel)
+                    {
+                        selectedClaudeModelIndex = i;
+                    }
+                }
+                
+                // If we couldn't find the current model in the list, reset to first option
+                if (selectedClaudeModelIndex >= claudeModelOptions.Length && claudeModelOptions.Length > 0)
+                {
+                    selectedClaudeModelIndex = 0;
+                    UpdateClaudeModelFromSelection();
+                }
+                
+                // If the current backend is Claude, update it with the current model
+                if (currentBackend is ClaudeBackend)
+                {
+                    ((ClaudeBackend)currentBackend).SetModel(claudeModel);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error loading Claude models: {ex.Message}\n{ex.StackTrace}");
+                
+                // Add some default options for fallback
+                claudeModelOptions = new string[]
+                {
+                    "Claude 3 Opus",
+                    "Claude 3 Sonnet",
+                    "Claude 3 Haiku"
+                };
+                
+                // Try to find a sensible default based on the current model ID
+                selectedClaudeModelIndex = 0;
+                if (claudeModel.Contains("opus"))
+                {
+                    selectedClaudeModelIndex = 0;
+                }
+                else if (claudeModel.Contains("sonnet"))
+                {
+                    selectedClaudeModelIndex = 1;
+                }
+                else if (claudeModel.Contains("haiku"))
+                {
+                    selectedClaudeModelIndex = 2;
+                }
+                
+                // Show error notification
+                EditorUtility.DisplayDialog("Error Loading Models", 
+                    "Failed to load Claude models. Using default options instead.\n\nError: " + ex.Message, 
+                    "OK");
+            }
+            finally
+            {
+                isLoadingClaudeModels = false;
+                Repaint(); // Ensure UI updates after loading completes
+            }
+        }
+        
+        /// <summary>
+        /// Update the selected Claude model based on the dropdown selection
+        /// </summary>
+        private async void UpdateClaudeModelFromSelection()
+        {
+            if (selectedClaudeModelIndex < 0 || selectedClaudeModelIndex >= claudeModelOptions.Length)
+            {
+                return;
+            }
+            
+            try
+            {
+                // Get the selected model name
+                string selectedDisplayName = claudeModelOptions[selectedClaudeModelIndex];
+                
+                // Convert to model ID
+                ClaudeBackend claudeBackend = null;
+                
+                if (currentBackend is ClaudeBackend)
+                {
+                    claudeBackend = (ClaudeBackend)currentBackend;
+                }
+                else
+                {
+                    claudeBackend = new ClaudeBackend();
+                    claudeBackend.SetApiKey(claudeApiKey);
+                }
+                
+                string modelId = await claudeBackend.GetModelIdFromDisplayName(selectedDisplayName);
+                
+                // Update current model
+                claudeModel = modelId;
+                
+                // If the current backend is Claude, update it
+                if (currentBackend is ClaudeBackend)
+                {
+                    ((ClaudeBackend)currentBackend).SetModel(claudeModel);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error updating Claude model: {ex.Message}");
+            }
+        }
+
         private void LoadSettings()
         {
             grokApiKey = EditorPrefs.GetString("AICodingAssistant_GrokApiKey", "");
             claudeApiKey = EditorPrefs.GetString("AICodingAssistant_ClaudeApiKey", "");
+            claudeModel = EditorPrefs.GetString("AICodingAssistant_ClaudeModel", "claude-3-opus-20240229");
             ollamaUrl = EditorPrefs.GetString("AICodingAssistant_OllamaUrl", "http://localhost:11434");
             ollamaModel = EditorPrefs.GetString("AICodingAssistant_OllamaModel", "llama2");
             
@@ -1075,6 +1387,13 @@ namespace AICodingAssistant.Editor
             else if (currentBackend is ClaudeBackend claudeBackend && !string.IsNullOrEmpty(claudeApiKey))
             {
                 claudeBackend.SetApiKey(claudeApiKey);
+                claudeBackend.SetModel(claudeModel);
+                
+                // Load Claude models if API key is configured
+                if (!string.IsNullOrEmpty(claudeApiKey))
+                {
+                    EditorApplication.delayCall += RefreshClaudeModels;
+                }
             }
         }
         
@@ -1082,6 +1401,7 @@ namespace AICodingAssistant.Editor
         {
             EditorPrefs.SetString("AICodingAssistant_GrokApiKey", grokApiKey);
             EditorPrefs.SetString("AICodingAssistant_ClaudeApiKey", claudeApiKey);
+            EditorPrefs.SetString("AICodingAssistant_ClaudeModel", claudeModel);
             EditorPrefs.SetString("AICodingAssistant_OllamaUrl", ollamaUrl);
             EditorPrefs.SetString("AICodingAssistant_OllamaModel", ollamaModel);
             EditorPrefs.SetInt("AICodingAssistant_SelectedBackend", (int)selectedBackendType);
@@ -1106,6 +1426,166 @@ namespace AICodingAssistant.Editor
             else if (currentBackend is ClaudeBackend claudeBackend)
             {
                 claudeBackend.SetApiKey(claudeApiKey);
+                claudeBackend.SetModel(claudeModel);
+            }
+        }
+        
+        #endregion
+        
+        #region Compilation Error Handling
+        
+        /// <summary>
+        /// Handles compilation completed events and automatically suggests fixes for errors
+        /// </summary>
+        private async void HandleCompilationCompleted(CompilationResult result)
+        {
+            // Only respond to compilation failures
+            if (result.Success || result.Errors.Count == 0 || result.ChangesWithErrors.Count == 0)
+            {
+                return;
+            }
+            
+            try
+            {
+                // Build a message about the compilation errors
+                StringBuilder errorMessage = new StringBuilder();
+                errorMessage.AppendLine("⚠️ **I detected compilation errors in your recent changes:**");
+                errorMessage.AppendLine();
+                
+                foreach (var change in result.ChangesWithErrors)
+                {
+                    errorMessage.AppendLine($"**File:** {Path.GetFileName(change.FilePath)}");
+                    errorMessage.AppendLine($"**Change:** {change.ChangeType} at {change.Timestamp.ToString("HH:mm:ss")}");
+                    errorMessage.AppendLine($"**Description:** {change.Description}");
+                    errorMessage.AppendLine("**Errors:**");
+                    
+                    foreach (var error in change.CompilationErrors)
+                    {
+                        errorMessage.AppendLine($"- {error}");
+                    }
+                    
+                    errorMessage.AppendLine();
+                }
+                
+                // Add the error message to the chat
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = errorMessage.ToString(),
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
+                
+                Repaint();
+                
+                // Analyze errors and suggest fixes
+                await SuggestFixesForCompilationErrors(result);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error handling compilation result: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Analyzes compilation errors and suggests fixes based on the context of recent changes
+        /// </summary>
+        private async Task SuggestFixesForCompilationErrors(CompilationResult result)
+        {
+            if (result.ChangesWithErrors.Count == 0)
+            {
+                return;
+            }
+            
+            try
+            {
+                // Show "thinking" message
+                var processingMessage = new ChatMessage
+                {
+                    IsUser = false,
+                    Content = "🔍 Analyzing errors and suggesting fixes...",
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                };
+                chatHistory.Add(processingMessage);
+                Repaint();
+                
+                // Build a prompt focused on fixing the specific errors
+                StringBuilder fixPrompt = new StringBuilder();
+                fixPrompt.AppendLine("You need to help fix compilation errors that resulted from recent code changes.");
+                fixPrompt.AppendLine("\nRECENT CHANGES THAT CAUSED ERRORS:");
+                
+                // Add details of changes with errors
+                foreach (var change in result.ChangesWithErrors)
+                {
+                    fixPrompt.AppendLine($"File: {change.FilePath}");
+                    fixPrompt.AppendLine($"Change Type: {change.ChangeType}");
+                    fixPrompt.AppendLine($"Description: {change.Description}");
+                    
+                    // Read current content of the file to provide context
+                    string fileContent = ScriptUtility.ReadScriptContent(change.FilePath);
+                    if (!string.IsNullOrEmpty(fileContent))
+                    {
+                        fixPrompt.AppendLine("\nCurrent file content:");
+                        fixPrompt.AppendLine("```csharp");
+                        fixPrompt.AppendLine(fileContent);
+                        fixPrompt.AppendLine("```");
+                    }
+                    
+                    // Add compilation errors
+                    fixPrompt.AppendLine("\nCompilation Errors:");
+                    foreach (var error in change.CompilationErrors)
+                    {
+                        fixPrompt.AppendLine($"- {error}");
+                    }
+                    
+                    fixPrompt.AppendLine();
+                }
+                
+                // Get the entire change history for context
+                fixPrompt.AppendLine("\nFULL CHANGE CONTEXT:");
+                fixPrompt.AppendLine(ChangeTracker.Instance.GetChangesSummary());
+                
+                // Add instruction for the response
+                fixPrompt.AppendLine("\nPlease analyze these errors and provide specific fixes. If appropriate, use the code edit formatting described in your system instructions.");
+                fixPrompt.AppendLine("Be concise but clear in your explanation. Focus only on fixing these specific compilation errors.");
+                
+                // Send to AI backend
+                string response = await currentBackend.SendRequest(fixPrompt.ToString());
+                
+                // Remove the processing message
+                chatHistory.Remove(processingMessage);
+                
+                // Add AI response to chat history
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = response,
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
+                
+                Repaint();
+                
+                // Process any code edit suggestions in the response
+                var codeEdits = CodeEditUtility.ExtractEdits(response);
+                if (codeEdits.Count > 0)
+                {
+                    ShowCodeEditDialog(codeEdits);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error suggesting fixes: {ex.Message}");
+                
+                // Add error message
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = false,
+                    Content = $"Error analyzing compilation errors: {ex.Message}",
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
             }
         }
         
