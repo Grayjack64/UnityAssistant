@@ -2942,4 +2942,4 @@ namespace AICodingAssistant.Editor
         /// </summary>
         public bool IsSystemMessage { get; set; }
     }
-} 
+}
