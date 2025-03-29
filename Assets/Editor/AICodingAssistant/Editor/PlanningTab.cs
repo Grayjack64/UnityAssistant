@@ -5,6 +5,7 @@ using UnityEditor;
 using AICodingAssistant.Scripts;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace AICodingAssistant.Editor
 {
@@ -21,9 +22,14 @@ namespace AICodingAssistant.Editor
         private bool showCreatePlan = false;
         private PlanStep selectedStep = null;
         
+        // Reference to AI window for generating plans
+        private AICodingAssistantWindow aiWindow;
+        
         // Constructor
-        public PlanningTab()
+        public PlanningTab(AICodingAssistantWindow window = null)
         {
+            aiWindow = window;
+            
             // Register for planning system events
             PlanningSystem.Instance.OnPlanCreated += HandlePlanCreated;
             PlanningSystem.Instance.OnStepCompleted += HandleStepCompleted;
@@ -102,7 +108,8 @@ namespace AICodingAssistant.Editor
                 
                 planName = EditorGUILayout.TextField("Name:", planName);
                 
-                EditorGUILayout.LabelField("Description:");
+                EditorGUILayout.LabelField("Description (Natural Language Instructions):");
+                EditorGUILayout.HelpBox("Describe what you want to accomplish, and the AI will create a plan with steps.", MessageType.Info);
                 planDescription = EditorGUILayout.TextArea(planDescription, GUILayout.Height(100));
                 
                 EditorGUILayout.BeginHorizontal();
@@ -112,14 +119,30 @@ namespace AICodingAssistant.Editor
                     showCreatePlan = false;
                 }
                 
-                if (GUILayout.Button("Create"))
+                if (GUILayout.Button("Create Manually"))
                 {
-                    if (!string.IsNullOrEmpty(planName))
+                    if (!string.IsNullOrEmpty(planName) && !string.IsNullOrEmpty(planDescription))
                     {
-                        PlanningSystem.Instance.CreatePlan(planName, planDescription);
+                        var plan = PlanningSystem.Instance.CreatePlan(planName, planDescription);
                         showCreatePlan = false;
                         planName = "New Plan";
                         planDescription = "";
+                    }
+                }
+                
+                if (GUILayout.Button("Generate AI Plan"))
+                {
+                    if (!string.IsNullOrEmpty(planName) && !string.IsNullOrEmpty(planDescription))
+                    {
+                        GenerateAIPlan(planName, planDescription);
+                        showCreatePlan = false;
+                        planName = "New Plan";
+                        planDescription = "";
+                    }
+                    else
+                    {
+                        EditorUtility.DisplayDialog("Missing Information", 
+                            "Please provide both a name and description for your plan.", "OK");
                     }
                 }
                 
@@ -310,26 +333,30 @@ namespace AICodingAssistant.Editor
         {
             if (selectedStep == null)
                 return;
+            
+            // If we have an AI window reference, use AI-powered execution
+            if (aiWindow != null)
+            {
+                ExecuteStepWithAI(selectedStep);
+                return;
+            }
                 
+            // Fallback to basic execution if no AI window is available
             switch (selectedStep.StepType)
             {
                 case PlanStepType.Analysis:
-                    // Execute analysis step
                     PlanningSystem.Instance.ExecuteStep(selectedStep);
                     break;
                     
                 case PlanStepType.ScriptCreation:
-                    // Execute script creation step
                     PlanningSystem.Instance.ExecuteStep(selectedStep);
                     break;
                     
                 case PlanStepType.SceneOperation:
-                    // Execute scene operation step
                     PlanningSystem.Instance.ExecuteStep(selectedStep);
                     break;
                     
                 case PlanStepType.Guidance:
-                    // Just mark guidance steps as completed
                     PlanningSystem.Instance.MarkStepCompleted(selectedStep);
                     break;
                     
@@ -337,6 +364,155 @@ namespace AICodingAssistant.Editor
                     Debug.LogWarning($"Unsupported step type: {selectedStep.StepType}");
                     break;
             }
+        }
+        
+        /// <summary>
+        /// Execute a step using the AI
+        /// </summary>
+        /// <param name="step">The step to execute</param>
+        private async void ExecuteStepWithAI(PlanStep step)
+        {
+            if (step == null || aiWindow == null)
+                return;
+            
+            try
+            {
+                // Show progress dialog
+                EditorUtility.DisplayProgressBar("Executing Step", $"The AI is working on: {step.Description}", 0.5f);
+                
+                // Use AI to execute the step using a callback to the AI window
+                await PlanningSystem.Instance.AskAIToExecuteStep(step, SendAIRequest);
+                
+                // Refresh the UI
+                EditorUtility.SetDirty(this);
+                EditorWindow.GetWindow<AICodingAssistantWindow>().Repaint();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error executing step with AI: {ex.Message}");
+                EditorUtility.DisplayDialog("Step Execution Failed", 
+                    $"Failed to execute step: {ex.Message}", "OK");
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+        
+        /// <summary>
+        /// Send a request to the AI backend via the AI window
+        /// </summary>
+        /// <param name="prompt">The prompt to send</param>
+        /// <returns>AI's response</returns>
+        private async Task<string> SendAIRequest(string prompt)
+        {
+            if (aiWindow == null)
+            {
+                throw new InvalidOperationException("AI Window reference is null");
+            }
+            
+            try
+            {
+                // Add the prompt to the chat as a special message
+                aiWindow.AddSystemMessage($"🔄 Executing plan step: {selectedStep.Description}", true);
+                
+                // Send to the AI backend and get response
+                AIResponse response = await aiWindow.GetCurrentBackend().SendRequest(prompt);
+                
+                if (response.Success)
+                {
+                    // Notify the user about the completion
+                    aiWindow.AddSystemMessage($"✅ AI completed step: {selectedStep.Description}", true);
+                    return response.Message;
+                }
+                else
+                {
+                    // Notify about the failure
+                    string errorMsg = $"❌ AI failed to execute step: {response.ErrorMessage}";
+                    aiWindow.AddSystemMessage(errorMsg, true);
+                    throw new Exception(errorMsg);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error sending AI request: {ex.Message}");
+                throw;
+            }
+        }
+        
+        /// <summary>
+        /// Generate a plan from natural language instructions using AI
+        /// </summary>
+        private async void GenerateAIPlan(string name, string description)
+        {
+            // Create the plan first (empty)
+            var plan = PlanningSystem.Instance.CreatePlan(name, description);
+            
+            // Show a progress dialog
+            EditorUtility.DisplayProgressBar("Generating Plan", "Analyzing instructions and creating plan steps...", 0.5f);
+            
+            try
+            {
+                // If we have a reference to the AI window, use it to process the plan generation
+                if (aiWindow != null)
+                {
+                    // Format a special prompt for the AI
+                    string prompt = BuildPlanGenerationPrompt(description);
+                    
+                    // Send the prompt to the AI
+                    await aiWindow.ProcessPlanGenerationRequest(prompt, plan);
+                }
+                else
+                {
+                    // Fallback to a simpler approach if we don't have the AI window reference
+                    // Add some default steps based on common project tasks
+                    PlanningSystem.Instance.AddStep("Analyze project structure and requirements", PlanStepType.Analysis);
+                    PlanningSystem.Instance.AddStep("Create necessary script files", PlanStepType.ScriptCreation);
+                    PlanningSystem.Instance.AddStep("Set up scene objects and components", PlanStepType.SceneOperation);
+                    PlanningSystem.Instance.AddStep("Test and verify implementation", PlanStepType.Guidance);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error generating AI plan: {ex.Message}");
+                EditorUtility.DisplayDialog("Error Generating Plan", 
+                    $"Failed to generate plan: {ex.Message}", "OK");
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
+        }
+        
+        /// <summary>
+        /// Build a prompt for the AI to generate a plan
+        /// </summary>
+        private string BuildPlanGenerationPrompt(string description)
+        {
+            return $@"I need you to create a step-by-step plan for a Unity project task. 
+            
+Task description: {description}
+
+Please analyze this task and break it down into clear, actionable steps. For each step, specify:
+1. A clear description of what needs to be done
+2. The type of step (Analysis, ScriptCreation, SceneOperation, or Guidance)
+3. Any dependencies on previous steps
+
+Format your response as a JSON array of steps like this:
+```json
+[
+  {{
+    ""description"": ""Step description here"",
+    ""type"": ""Analysis"" 
+  }},
+  {{
+    ""description"": ""Another step description"",
+    ""type"": ""ScriptCreation""
+  }}
+]
+```
+
+Only include the JSON array in your response, no other text.";
         }
     }
 } 

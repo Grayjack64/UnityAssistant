@@ -2944,10 +2944,179 @@ namespace AICodingAssistant.Editor
         {
             if (planningTab == null)
             {
-                planningTab = new PlanningTab();
+                planningTab = new PlanningTab(this);
             }
             
             planningTab.DrawGUI();
+        }
+
+        /// <summary>
+        /// Process a request to generate a plan based on natural language instructions
+        /// </summary>
+        /// <param name="prompt">The prompt to send to the AI</param>
+        /// <param name="plan">The plan to fill with steps</param>
+        public async Task ProcessPlanGenerationRequest(string prompt, Plan plan)
+        {
+            if (currentBackend == null)
+            {
+                Debug.LogError("No AI backend available for plan generation");
+                return;
+            }
+            
+            try
+            {
+                // Send the request to the AI backend
+                AIResponse response = await currentBackend.SendRequest(prompt);
+                
+                if (response.Success)
+                {
+                    // Parse the JSON response and add steps to the plan
+                    await ParseAndAddPlanSteps(response.Message, plan);
+                    
+                    // Add a system message to notify the user
+                    AddSystemMessage($"🎯 Generated plan: {plan.Name}\n\nPlan contains {plan.Steps.Count} steps. Switch to the Planning tab to view and execute the plan.", true);
+                }
+                else
+                {
+                    Debug.LogError($"AI plan generation failed: {response.ErrorMessage}");
+                    
+                    // Add some default steps as a fallback
+                    PlanningSystem.Instance.AddStep("Analyze project structure and requirements", PlanStepType.Analysis);
+                    PlanningSystem.Instance.AddStep("Create necessary script files", PlanStepType.ScriptCreation);
+                    PlanningSystem.Instance.AddStep("Set up scene objects and components", PlanStepType.SceneOperation);
+                    PlanningSystem.Instance.AddStep("Test and verify implementation", PlanStepType.Guidance);
+                    
+                    // Add a system message to notify the user
+                    AddSystemMessage($"⚠️ AI plan generation failed. Created a default plan instead. Error: {response.ErrorMessage}", true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Exception during AI plan generation: {ex.Message}\n{ex.StackTrace}");
+                
+                // Add some default steps as a fallback
+                PlanningSystem.Instance.AddStep("Analyze project structure and requirements", PlanStepType.Analysis);
+                PlanningSystem.Instance.AddStep("Create necessary script files", PlanStepType.ScriptCreation);
+                PlanningSystem.Instance.AddStep("Set up scene objects and components", PlanStepType.SceneOperation);
+                PlanningSystem.Instance.AddStep("Test and verify implementation", PlanStepType.Guidance);
+                
+                // Add a system message to notify the user
+                AddSystemMessage($"⚠️ Exception during AI plan generation. Created a default plan instead. Error: {ex.Message}", true);
+            }
+        }
+        
+        /// <summary>
+        /// Parse the AI response and add steps to the plan
+        /// </summary>
+        /// <param name="aiResponse">The AI's response</param>
+        /// <param name="plan">The plan to add steps to</param>
+        private async Task ParseAndAddPlanSteps(string aiResponse, Plan plan)
+        {
+            try
+            {
+                // Extract JSON array from the response
+                string jsonContent = ExtractJsonFromResponse(aiResponse);
+                
+                if (string.IsNullOrEmpty(jsonContent))
+                {
+                    Debug.LogError("Could not extract JSON from AI response");
+                    return;
+                }
+                
+                // Parse the JSON array
+                List<PlanStepData> steps = JsonUtility.FromJson<PlanStepDataList>("{\"steps\":" + jsonContent + "}").steps;
+                
+                // Add each step to the plan
+                foreach (var stepData in steps)
+                {
+                    PlanStepType stepType;
+                    if (Enum.TryParse(stepData.type, out stepType))
+                    {
+                        PlanningSystem.Instance.AddStep(stepData.description, stepType);
+                    }
+                    else
+                    {
+                        // Default to Analysis if type is invalid
+                        PlanningSystem.Instance.AddStep(stepData.description, PlanStepType.Analysis);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error parsing AI response for plan steps: {ex.Message}\n{ex.StackTrace}");
+                throw;
+            }
+        }
+        
+        /// <summary>
+        /// Extract JSON array from the AI response
+        /// </summary>
+        /// <param name="response">The AI's response</param>
+        /// <returns>JSON array as string</returns>
+        private string ExtractJsonFromResponse(string response)
+        {
+            // Look for JSON array between brackets
+            int startIndex = response.IndexOf('[');
+            int endIndex = response.LastIndexOf(']');
+            
+            if (startIndex >= 0 && endIndex > startIndex)
+            {
+                return response.Substring(startIndex, endIndex - startIndex + 1);
+            }
+            
+            // If no brackets found, look for JSON array within code blocks
+            startIndex = response.IndexOf("```json");
+            if (startIndex >= 0)
+            {
+                startIndex = response.IndexOf('[', startIndex);
+                endIndex = response.IndexOf("```", startIndex);
+                if (endIndex > 0)
+                {
+                    endIndex = response.LastIndexOf(']', endIndex);
+                    if (startIndex >= 0 && endIndex > startIndex)
+                    {
+                        return response.Substring(startIndex, endIndex - startIndex + 1);
+                    }
+                }
+            }
+            
+            // Last resort - look for any valid JSON array
+            startIndex = response.IndexOf('[');
+            endIndex = response.LastIndexOf(']');
+            if (startIndex >= 0 && endIndex > startIndex)
+            {
+                return response.Substring(startIndex, endIndex - startIndex + 1);
+            }
+            
+            return string.Empty;
+        }
+        
+        /// <summary>
+        /// Data structure for deserializing plan steps from JSON
+        /// </summary>
+        [Serializable]
+        private class PlanStepData
+        {
+            public string description;
+            public string type;
+        }
+        
+        /// <summary>
+        /// List of plan steps for JSON deserialization
+        /// </summary>
+        [Serializable]
+        private class PlanStepDataList
+        {
+            public List<PlanStepData> steps;
+        }
+
+        /// <summary>
+        /// Get the current AI backend
+        /// </summary>
+        /// <returns>The current AI backend</returns>
+        public AIBackend GetCurrentBackend()
+        {
+            return currentBackend;
         }
     }
    

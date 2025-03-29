@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
+using System.Threading.Tasks;
 
 namespace AICodingAssistant.Scripts
 {
@@ -464,6 +465,172 @@ namespace AICodingAssistant.Scripts
             
             // Mark step as completed
             MarkStepCompleted(step);
+        }
+        
+        #endregion
+        
+        #region Integration with AI System
+        
+        /// <summary>
+        /// Ask the AI to execute a specific step and update the step status
+        /// </summary>
+        /// <param name="step">The step to execute</param>
+        /// <param name="aiCallback">Callback to send a request to the AI</param>
+        public async Task AskAIToExecuteStep(PlanStep step, Func<string, Task<string>> aiCallback)
+        {
+            if (step == null)
+            {
+                Debug.LogError("Cannot execute step: Step is null");
+                return;
+            }
+            
+            try
+            {
+                // Update step status
+                step.Status = PlanStepStatus.InProgress;
+                
+                // Build prompt based on step type
+                string prompt = BuildStepExecutionPrompt(step);
+                
+                // Send request to AI via callback
+                string aiResponse = await aiCallback(prompt);
+                
+                // Update step with result
+                step.Result = aiResponse;
+                
+                // Extract and execute any actions from the AI response
+                await ProcessAIStepResponse(step, aiResponse);
+                
+                // If we get here without exceptions, mark as completed
+                MarkStepCompleted(step);
+            }
+            catch (Exception ex)
+            {
+                MarkStepFailed(step, $"Error executing step via AI: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Build an appropriate prompt for the AI to execute a specific step
+        /// </summary>
+        /// <param name="step">The step to execute</param>
+        /// <returns>Prompt for the AI</returns>
+        private string BuildStepExecutionPrompt(PlanStep step)
+        {
+            string basePrompt = $"I'm working on a Unity project plan. Please execute the following step: {step.Description}";
+            
+            switch (step.StepType)
+            {
+                case PlanStepType.Analysis:
+                    return $"{basePrompt}\n\nPlease analyze the project structure and provide insights on the best approach for implementing this feature. Consider code architecture, design patterns, and Unity best practices.";
+                    
+                case PlanStepType.ScriptCreation:
+                    return $"{basePrompt}\n\nPlease create the necessary C# script(s) for this step. Provide complete, well-commented code that follows Unity best practices. Format the code as: ```cs\n// Code here\n```";
+                    
+                case PlanStepType.SceneOperation:
+                    return $"{basePrompt}\n\nPlease describe exactly how to set up the scene for this step. Include detailed instructions for creating GameObjects, adding components, and configuring properties.";
+                    
+                case PlanStepType.Guidance:
+                    return $"{basePrompt}\n\nPlease provide detailed guidance on how to accomplish this step, including best practices and any potential issues to watch out for.";
+                    
+                default:
+                    return basePrompt;
+            }
+        }
+        
+        /// <summary>
+        /// Process the AI's response to a step execution request
+        /// </summary>
+        /// <param name="step">The step being executed</param>
+        /// <param name="aiResponse">The AI's response</param>
+        private async Task ProcessAIStepResponse(PlanStep step, string aiResponse)
+        {
+            // Different processing depending on step type
+            switch (step.StepType)
+            {
+                case PlanStepType.ScriptCreation:
+                    // Extract script code and create file
+                    string scriptCode = ExtractCodeFromResponse(aiResponse);
+                    if (!string.IsNullOrEmpty(scriptCode))
+                    {
+                        string className = ExtractClassNameFromCode(scriptCode);
+                        string scriptPath = $"Assets/{className}.cs";
+                        
+                        try
+                        {
+                            File.WriteAllText(scriptPath, scriptCode);
+                            AssetDatabase.Refresh();
+                            step.Metadata["created_script_path"] = scriptPath;
+                            step.Result += $"\n\nCreated script at: {scriptPath}";
+                            Debug.Log($"Created script at: {scriptPath}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"Error creating script: {ex.Message}");
+                            step.Result += $"\n\nFailed to create script: {ex.Message}";
+                        }
+                    }
+                    break;
+                    
+                case PlanStepType.SceneOperation:
+                    // Could potentially send commands to a scene manipulation service
+                    // For now, we'll just provide instructions to the user
+                    break;
+            }
+            
+            await Task.CompletedTask; // Placeholder for when we add more async operations
+        }
+        
+        /// <summary>
+        /// Extract code blocks from an AI response
+        /// </summary>
+        /// <param name="response">The AI's response</param>
+        /// <returns>Extracted code or empty string</returns>
+        private string ExtractCodeFromResponse(string response)
+        {
+            // Look for code blocks
+            int startIndex = response.IndexOf("```cs");
+            if (startIndex < 0)
+            {
+                startIndex = response.IndexOf("```csharp");
+            }
+            if (startIndex < 0)
+            {
+                startIndex = response.IndexOf("```");
+            }
+            
+            if (startIndex >= 0)
+            {
+                // Find the end of the opening tag
+                startIndex = response.IndexOf('\n', startIndex);
+                if (startIndex >= 0)
+                {
+                    int endIndex = response.IndexOf("```", startIndex);
+                    if (endIndex > startIndex)
+                    {
+                        return response.Substring(startIndex + 1, endIndex - startIndex - 1).Trim();
+                    }
+                }
+            }
+            
+            return string.Empty;
+        }
+        
+        /// <summary>
+        /// Extract class name from C# code
+        /// </summary>
+        /// <param name="code">C# code</param>
+        /// <returns>Class name or "NewScript" if not found</returns>
+        private string ExtractClassNameFromCode(string code)
+        {
+            // Simple regex to find class name
+            var match = System.Text.RegularExpressions.Regex.Match(code, @"class\s+(\w+)");
+            if (match.Success && match.Groups.Count > 1)
+            {
+                return match.Groups[1].Value;
+            }
+            
+            return "NewScript";
         }
         
         #endregion
