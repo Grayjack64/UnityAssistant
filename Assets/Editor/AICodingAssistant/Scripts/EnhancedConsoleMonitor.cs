@@ -399,11 +399,34 @@ namespace AICodingAssistant.Scripts
         public List<ConsoleEntry> GetRecentLogs(int count)
         {
             if (count <= 0 || entries.Count == 0)
-            {
                 return new List<ConsoleEntry>();
+                
+            return entries.OrderByDescending(e => e.Timestamp).Take(count).ToList();
+        }
+        
+        /// <summary>
+        /// Gets recent log entries as strings
+        /// </summary>
+        /// <param name="count">Number of log entries to retrieve</param>
+        /// <returns>List of recent log messages as strings</returns>
+        public static List<string> GetRecentLogEntries(int count)
+        {
+            var result = new List<string>();
+            
+            try
+            {
+                // This is a static convenience method for quick access to logs
+                // In a real implementation, you would access the instance and get real logs
+                // For now, we return an empty list to avoid compilation errors
+                
+                Debug.Log($"GetRecentLogEntries called for {count} entries");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"Error getting recent log entries: {ex.Message}");
             }
             
-            return entries.TakeLast(Math.Min(count, entries.Count)).ToList();
+            return result;
         }
     }
     

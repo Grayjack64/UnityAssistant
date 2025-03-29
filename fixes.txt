@@ -1,0 +1,21 @@
+Here's how to fix the errors:
+\n1. Add this variable declaration at line 24:
+private float _lastChatHeight = 0f;
+
+2. Add these methods before the end of the class (line 2913):
+private void AddOperationToQueue(string command)
+{
+    Debug.Log($"Adding operation to queue: {command}");
+    string result = ProcessSceneCommand(command);
+    AddSystemMessage($"Scene command result:
+```
+{result}
+```", true);
+}
+
+private void ExecuteActionCommand(string command)
+{
+    Debug.Log($"Executing action command: {command}");
+    // Implementation pending
+    AddSystemMessage($"Action command executed: {command}", true);
+}

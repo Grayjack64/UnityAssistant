@@ -20,7 +20,7 @@ namespace AICodingAssistant.Editor
     {
         // Window state
         private int currentTabIndex = 0;
-        private string[] tabOptions = { "Chat", "Settings" };
+        private string[] tabOptions = { "Chat", "Settings", "Planning" };
         private Vector2 scrollPosition;
         private float _lastChatHeight = 0f;
         
@@ -73,6 +73,9 @@ namespace AICodingAssistant.Editor
         private List<string> prefabs = new List<string>();
         private DateTime lastSceneRefreshTime = DateTime.MinValue;
         private TimeSpan sceneRefreshInterval = TimeSpan.FromSeconds(5);
+        
+        // Planning functionality
+        private PlanningTab planningTab;
         
         [MenuItem("Window/AI Coding Assistant")]
         public static void ShowWindow()
@@ -234,6 +237,9 @@ namespace AICodingAssistant.Editor
                 {
                     case 1: // Settings
                         DrawSettingsTab();
+                        break;
+                    case 2: // Planning
+                        DrawPlanningTab();
                         break;
                 }
                 
@@ -2932,6 +2938,16 @@ namespace AICodingAssistant.Editor
             Debug.Log($"Executing action command: {command}");
             // Implementation pending
             AddSystemMessage($"Action command executed: {command}", true);
+        }
+
+        private void DrawPlanningTab()
+        {
+            if (planningTab == null)
+            {
+                planningTab = new PlanningTab();
+            }
+            
+            planningTab.DrawGUI();
         }
     }
    
