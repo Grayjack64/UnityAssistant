@@ -22,6 +22,7 @@ namespace AICodingAssistant.Editor
         private int currentTabIndex = 0;
         private string[] tabOptions = { "Chat", "Settings" };
         private Vector2 scrollPosition;
+        private float _lastChatHeight = 0f;
         
         // AI settings
         private AIBackendType selectedBackendType = AIBackendType.LocalLLM;
@@ -2910,7 +2911,30 @@ namespace AICodingAssistant.Editor
                 });
             }
         }
-    
+        
+        /// <summary>
+        /// Adds a scene operation command to the queue for execution
+        /// </summary>
+        /// <param name="command">The command to add to the queue</param>
+        private void AddOperationToQueue(string command)
+        {
+            Debug.Log($"Adding operation to queue: {command}");
+            string result = ProcessSceneCommand(command);
+            AddSystemMessage($"Scene command result:\n```\n{result}\n```", true);
+        }
+        
+        /// <summary>
+        /// Executes an action command
+        /// </summary>
+        /// <param name="command">The action command to execute</param>
+        private void ExecuteActionCommand(string command)
+        {
+            Debug.Log($"Executing action command: {command}");
+            // Implementation pending
+            AddSystemMessage($"Action command executed: {command}", true);
+        }
+    }
+   
     /// <summary>
     /// Represents a message in the chat history
     /// </summary>
