@@ -31,12 +31,12 @@ namespace AICodingAssistant.AI
         /// Send a request to the Grok API
         /// </summary>
         /// <param name="prompt">The prompt to send to the AI</param>
-        /// <returns>The AI's response as a string</returns>
-        public override async Task<string> SendRequest(string prompt)
+        /// <returns>The AI's response</returns>
+        public override async Task<AIResponse> SendRequest(string prompt)
         {
             if (!IsConfigured())
             {
-                return "Error: Grok API key not configured. Please set it in the Settings tab.";
+                return AIResponse.CreateError("Grok API key not configured. Please set it in the Settings tab.");
             }
             
             try
@@ -68,19 +68,20 @@ namespace AICodingAssistant.AI
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
                         Debug.LogError($"Grok API error: {response.StatusCode} - {errorContent}");
-                        return $"Error communicating with Grok: {response.StatusCode} - {errorContent}";
+                        return AIResponse.CreateError($"Error communicating with Grok: {response.StatusCode} - {errorContent}");
                     }
                     
                     var responseBody = await response.Content.ReadAsStringAsync();
                     var responseObj = JsonConvert.DeserializeObject<GrokResponse>(responseBody);
                     
-                    return responseObj?.Choices?[0]?.Message?.Content ?? "No response from Grok";
+                    string responseText = responseObj?.Choices?[0]?.Message?.Content ?? "No response from Grok";
+                    return AIResponse.CreateSuccess(responseText);
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"Error communicating with Grok: {ex.Message}");
-                return $"Error: {ex.Message}";
+                return AIResponse.CreateError($"Error: {ex.Message}");
             }
         }
         

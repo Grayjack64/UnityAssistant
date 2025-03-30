@@ -42,8 +42,8 @@ namespace AICodingAssistant.AI
         /// Send a request to the Ollama API
         /// </summary>
         /// <param name="prompt">The prompt to send to the AI</param>
-        /// <returns>The AI's response as a string</returns>
-        public override async Task<string> SendRequest(string prompt)
+        /// <returns>The AI's response</returns>
+        public override async Task<AIResponse> SendRequest(string prompt)
         {
             try
             {
@@ -60,17 +60,24 @@ namespace AICodingAssistant.AI
                     "application/json");
                 
                 var response = await client.PostAsync($"{baseUrl}/api/generate", content);
-                response.EnsureSuccessStatusCode();
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    Debug.LogError($"Ollama API error: {response.StatusCode} - {errorContent}");
+                    return AIResponse.CreateError($"Error communicating with Ollama: {response.StatusCode} - {errorContent}");
+                }
                 
                 var responseBody = await response.Content.ReadAsStringAsync();
                 var responseObj = JsonConvert.DeserializeObject<OllamaResponse>(responseBody);
                 
-                return responseObj?.Response ?? "No response from Ollama";
+                string responseText = responseObj?.Response ?? "No response from Ollama";
+                return AIResponse.CreateSuccess(responseText);
             }
             catch (Exception ex)
             {
                 Debug.LogError($"Error communicating with Ollama: {ex.Message}");
-                return $"Error: {ex.Message}";
+                return AIResponse.CreateError($"Error: {ex.Message}");
             }
         }
         

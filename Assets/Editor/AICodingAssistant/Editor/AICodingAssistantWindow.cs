@@ -10,6 +10,7 @@ using AICodingAssistant.Scripts;
 using AICodingAssistant.Editor;
 using UnityEditor;
 using UnityEngine;
+using AICodingAssistant.Planning;
 
 namespace AICodingAssistant.Editor
 {

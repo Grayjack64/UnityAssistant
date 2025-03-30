@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEditor;
-using System.Threading.Tasks;
+using AICodingAssistant.AI;
 
-namespace AICodingAssistant.Scripts
+namespace AICodingAssistant.Planning
 {
     /// <summary>
     /// Represents a step within a plan

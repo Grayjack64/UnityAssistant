@@ -40,9 +40,14 @@ namespace AICodingAssistant.AI
         /// Send a request to the Gemini API
         /// </summary>
         /// <param name="prompt">The prompt to send to the AI</param>
-        /// <returns>The AI's response as a string</returns>
-        public override async Task<string> SendRequest(string prompt)
+        /// <returns>The AI's response</returns>
+        public override async Task<AIResponse> SendRequest(string prompt)
         {
+            if (!IsConfigured())
+            {
+                return AIResponse.CreateError("Gemini API key not configured. Please set it in the Settings tab.");
+            }
+            
             try
             {
                 // Create request object with system instruction
@@ -83,7 +88,13 @@ namespace AICodingAssistant.AI
                 Debug.Log($"Sending request to Gemini API: {url.Replace(apiKey, "API_KEY_HIDDEN")}");
                 
                 var response = await client.PostAsync(url, content);
-                response.EnsureSuccessStatusCode();
+                
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    Debug.LogError($"Gemini API error: {response.StatusCode} - {errorContent}");
+                    return AIResponse.CreateError($"Error communicating with Gemini: {response.StatusCode} - {errorContent}");
+                }
                 
                 var responseBody = await response.Content.ReadAsStringAsync();
                 Debug.Log($"Raw Gemini response: {responseBody}");
@@ -93,12 +104,12 @@ namespace AICodingAssistant.AI
                     responseObj.Candidates[0]?.Content?.Parts != null &&
                     responseObj.Candidates[0].Content.Parts.Length > 0)
                 {
-                    return responseObj.Candidates[0].Content.Parts[0].Text;
+                    return AIResponse.CreateSuccess(responseObj.Candidates[0].Content.Parts[0].Text);
                 }
                 else
                 {
                     // Fallback to full response if we can't extract the text
-                    return $"Error parsing Gemini response: {responseBody}";
+                    return AIResponse.CreateError($"Error parsing Gemini response: {responseBody}");
                 }
             }
             catch (Exception ex)
@@ -108,7 +119,7 @@ namespace AICodingAssistant.AI
                 {
                     Debug.LogError($"HTTP error occurred. Check your API key and network connection.");
                 }
-                return $"Error: {ex.Message}";
+                return AIResponse.CreateError($"Error: {ex.Message}");
             }
         }
         
