@@ -457,45 +457,29 @@ namespace AICodingAssistant.Editor
         
         private async void SendChatMessage()
         {
-            if (string.IsNullOrWhiteSpace(userQuery) || isProcessing)
-            {
+            if (isProcessing || string.IsNullOrWhiteSpace(userQuery))
                 return;
-            }
-            
-            // Add user message to chat history
-            chatHistory.Add(new ChatMessage
-            {
-                IsUser = true,
-                Content = userQuery,
-                Timestamp = DateTime.Now
-            });
-            
-            // Clear the input field
-            string query = userQuery;
-            userQuery = "";
-            
+                
             isProcessing = true;
-            Repaint();
             
             try
             {
-                // Check if project summary needs refresh
-                if (includeProjectSummary && (string.IsNullOrEmpty(projectSummary) || DateTime.Now - lastProjectSummaryUpdate > projectSummaryUpdateInterval))
-                {
-                    await Task.Run(() => GenerateProjectSummary());
-                }
-                
-                // Refresh scene data if needed
-                if (DateTime.Now - lastSceneRefreshTime > sceneRefreshInterval)
-                {
-                    RefreshSceneData();
-                }
-                
-                // Process and prepare the prompt
+                string query = userQuery.Trim();
                 string prompt = BuildAIPrompt(query);
                 
-                // Add processing message
-                var processingMessage = new ChatMessage
+                // Add user message to chat history
+                chatHistory.Add(new ChatMessage
+                {
+                    IsUser = true,
+                    Content = query,
+                    Timestamp = DateTime.Now,
+                    IsNew = true
+                });
+                
+                userQuery = ""; // Clear input field
+                
+                // Add a processing message as a placeholder
+                ChatMessage processingMessage = new ChatMessage
                 {
                     IsUser = false,
                     Content = "Processing...",
@@ -506,16 +490,18 @@ namespace AICodingAssistant.Editor
                 Repaint();
                 
                 // Send to AI backend
-                string response = await currentBackend.SendRequest(prompt);
+                AIResponse aiResponse = await currentBackend.SendRequest(prompt);
                 
                 // Remove the processing message
                 chatHistory.Remove(processingMessage);
+                
+                string responseText = aiResponse.Success ? aiResponse.Message : $"Error: {aiResponse.ErrorMessage}";
                 
                 // Add AI response to chat history
                 chatHistory.Add(new ChatMessage
                 {
                     IsUser = false,
-                    Content = response,
+                    Content = responseText,
                     Timestamp = DateTime.Now,
                     IsNew = true
                 });
@@ -527,7 +513,7 @@ namespace AICodingAssistant.Editor
                 }
                 
                 // Parse the response for commands
-                await ProcessAIResponse(query, response);
+                await ProcessAIResponse(query, responseText);
             }
             catch (Exception ex)
             {
@@ -2327,10 +2313,13 @@ namespace AICodingAssistant.Editor
                 fixPrompt.AppendLine("Be concise but clear in your explanation. Focus only on fixing these specific compilation errors.");
                 
                 // Send to AI backend
-                string response = await currentBackend.SendRequest(fixPrompt.ToString());
+                AIResponse aiResponse = await currentBackend.SendRequest(fixPrompt.ToString());
                 
                 // Remove the processing message
                 chatHistory.Remove(processingMessage);
+                
+                // Extract response text based on success/failure
+                string response = aiResponse.Success ? aiResponse.Message : $"Error getting suggestions: {aiResponse.ErrorMessage}";
                 
                 // Add AI response to chat history
                 chatHistory.Add(new ChatMessage

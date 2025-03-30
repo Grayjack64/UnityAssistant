@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
-using AICodingAssistant.Planning;
+using AICodingAssistant.Scripts;
 
 namespace AICodingAssistant.Editor
 {

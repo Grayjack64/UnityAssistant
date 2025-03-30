@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
+using UnityEngine.SceneManagement;
+using System.Text;
 
 namespace AICodingAssistant.Scripts
 {
@@ -36,7 +38,40 @@ namespace AICodingAssistant.Scripts
         /// <returns>List of GameObject paths representing the scene hierarchy</returns>
         public static List<string> GetSceneHierarchy()
         {
-            return SceneManipulationUtility.GetAllGameObjectsInScene();
+            List<string> hierarchy = new List<string>();
+            
+            // Get all root game objects in the current scene
+            Scene activeScene = SceneManager.GetActiveScene();
+            GameObject[] rootObjects = activeScene.GetRootGameObjects();
+            
+            foreach (GameObject root in rootObjects)
+            {
+                // Add root object
+                hierarchy.Add(root.name);
+                
+                // Add all children recursively
+                AddChildrenToHierarchy(root.transform, root.name, hierarchy);
+            }
+            
+            return hierarchy;
+        }
+
+        /// <summary>
+        /// Helper method to recursively add children to the hierarchy
+        /// </summary>
+        private static void AddChildrenToHierarchy(Transform parent, string parentPath, List<string> hierarchy)
+        {
+            foreach (Transform child in parent)
+            {
+                string childPath = parentPath + "/" + child.name;
+                hierarchy.Add(childPath);
+                
+                // Recursively add grandchildren
+                if (child.childCount > 0)
+                {
+                    AddChildrenToHierarchy(child, childPath, hierarchy);
+                }
+            }
         }
 
         #endregion
