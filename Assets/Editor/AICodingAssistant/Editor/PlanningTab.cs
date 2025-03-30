@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using AICodingAssistant.Scripts;
+using AICodingAssistant.AI;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -384,7 +385,6 @@ namespace AICodingAssistant.Editor
                 await PlanningSystem.Instance.AskAIToExecuteStep(step, SendAIRequest);
                 
                 // Refresh the UI
-                EditorUtility.SetDirty(this);
                 EditorWindow.GetWindow<AICodingAssistantWindow>().Repaint();
             }
             catch (Exception ex)

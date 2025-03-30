@@ -13,8 +13,8 @@ namespace AICodingAssistant.AI
         /// Send a request to the AI backend and get a response
         /// </summary>
         /// <param name="prompt">The prompt to send to the AI</param>
-        /// <returns>The AI's response as a string</returns>
-        public abstract Task<string> SendRequest(string prompt);
+        /// <returns>The AI's response</returns>
+        public abstract Task<AIResponse> SendRequest(string prompt);
 
         /// <summary>
         /// Check if this backend is properly configured (e.g., has API keys)
@@ -49,6 +49,17 @@ namespace AICodingAssistant.AI
                     Debug.LogError($"Unknown backend type: {backendType}");
                     return null;
             }
+        }
+        
+        /// <summary>
+        /// Simple wrapper for backwards compatibility
+        /// </summary>
+        /// <param name="prompt">The prompt to send</param>
+        /// <returns>The response text or error message</returns>
+        public async Task<string> SendRequestLegacy(string prompt)
+        {
+            var response = await SendRequest(prompt);
+            return response.Success ? response.Message : $"Error: {response.ErrorMessage}";
         }
     }
 
