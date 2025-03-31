@@ -337,7 +337,7 @@ namespace AICodingAssistant.Editor
             if (selectedStep == null)
                 return;
             
-            // If we have an AI window reference, use AI-powered execution
+            // Always try to use AI-powered execution if we have an AI window reference
             if (aiWindow != null)
             {
                 ExecuteStepWithAI(selectedStep);
@@ -383,8 +383,26 @@ namespace AICodingAssistant.Editor
                 // Show progress dialog
                 EditorUtility.DisplayProgressBar("Executing Step", $"The AI is working on: {step.Description}", 0.5f);
                 
+                // Add system message to indicate AI is executing this step automatically
+                aiWindow.AddSystemMessage($"🤖 AI is automatically executing plan step: {step.Description}", true);
+                
                 // Use AI to execute the step using a callback to the AI window
                 await PlanningSystem.Instance.AskAIToExecuteStep(step, SendAIRequest);
+                
+                // If this step was completed successfully, automatically proceed to the next step
+                if (step.Status == PlanStepStatus.Completed && PlanningSystem.Instance.IsExecuting)
+                {
+                    PlanStep nextStep = PlanningSystem.Instance.CurrentPlan.GetNextPendingStep();
+                    if (nextStep != null)
+                    {
+                        selectedStep = nextStep;
+                        ExecuteStepWithAI(nextStep);
+                    }
+                    else
+                    {
+                        aiWindow.AddSystemMessage("✅ All plan steps have been executed successfully!", true);
+                    }
+                }
                 
                 // Refresh the UI
                 EditorWindow.GetWindow<AICodingAssistantWindow>().Repaint();
@@ -392,6 +410,7 @@ namespace AICodingAssistant.Editor
             catch (Exception ex)
             {
                 Debug.LogError($"Error executing step with AI: {ex.Message}");
+                aiWindow.AddSystemMessage($"❌ Error executing step: {ex.Message}", true);
                 EditorUtility.DisplayDialog("Step Execution Failed", 
                     $"Failed to execute step: {ex.Message}", "OK");
             }

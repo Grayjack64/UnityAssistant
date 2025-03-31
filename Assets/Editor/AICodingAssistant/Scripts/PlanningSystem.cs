@@ -308,7 +308,42 @@ namespace AICodingAssistant.Planning
             // Mark step as in progress
             step.Status = PlanStepStatus.InProgress;
             
-            // Execute step based on type
+            // Try to find the AI window for AI-powered execution
+            var aiWindow = EditorWindow.GetWindow<AICodingAssistant.Editor.AICodingAssistantWindow>(false);
+            if (aiWindow != null)
+            {
+                // Get the PlanningTab instance using reflection
+                var planningTabField = aiWindow.GetType().GetField("planningTab", 
+                    System.Reflection.BindingFlags.NonPublic | 
+                    System.Reflection.BindingFlags.Instance);
+                
+                if (planningTabField != null)
+                {
+                    var planningTab = planningTabField.GetValue(aiWindow);
+                    
+                    // Get the ExecuteStepWithAI method using reflection
+                    var executeMethod = planningTab?.GetType().GetMethod("ExecuteStepWithAI", 
+                        System.Reflection.BindingFlags.NonPublic | 
+                        System.Reflection.BindingFlags.Instance);
+                    
+                    if (executeMethod != null)
+                    {
+                        try
+                        {
+                            Debug.Log("Using AI window for step execution");
+                            executeMethod.Invoke(planningTab, new object[] { step });
+                            return; // Exit early since we're using the AI window
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"Error using AI window for execution: {ex.Message}");
+                            // Fall back to basic execution
+                        }
+                    }
+                }
+            }
+            
+            // Execute step based on type (fallback if AI window is not available)
             try
             {
                 switch (step.StepType)
@@ -520,24 +555,31 @@ namespace AICodingAssistant.Planning
         /// <returns>Prompt for the AI</returns>
         private string BuildStepExecutionPrompt(PlanStep step)
         {
-            string basePrompt = $"I'm working on a Unity project plan. Please execute the following step: {step.Description}";
+            string basePrompt = $"I'm working on a Unity project plan. You need to actively execute (not just describe) the following step: {step.Description}";
+            
+            // Common instructions for all step types
+            string commonInstructions = @"
+IMPORTANT: You must EXECUTE this step directly, not just describe what to do.
+- Use scene commands (like `scene.create`, `scene.addcomponent`) to perform operations directly
+- Generate actual code when needed and apply it, don't just describe what code should be written
+- Take initiative - the user expects you to complete this step automatically";
             
             switch (step.StepType)
             {
                 case PlanStepType.Analysis:
-                    return $"{basePrompt}\n\nPlease analyze the project structure and provide insights on the best approach for implementing this feature. Consider code architecture, design patterns, and Unity best practices.";
+                    return $"{basePrompt}\n\nPlease analyze the project structure and provide insights on the best approach for implementing this feature. Consider code architecture, design patterns, and Unity best practices.\n{commonInstructions}";
                     
                 case PlanStepType.ScriptCreation:
-                    return $"{basePrompt}\n\nPlease create the necessary C# script(s) for this step. Provide complete, well-commented code that follows Unity best practices. Format the code as: ```cs\n// Code here\n```";
+                    return $"{basePrompt}\n\nCREATE the necessary C# script(s) for this step. You must generate complete, well-commented code that follows Unity best practices and can be immediately saved to a file. Format the code as:\n```cs\n// Code here\n```\n\nDo not just describe what the script should do - actually write the full implementation.\n{commonInstructions}";
                     
                 case PlanStepType.SceneOperation:
-                    return $"{basePrompt}\n\nPlease describe exactly how to set up the scene for this step. Include detailed instructions for creating GameObjects, adding components, and configuring properties.";
+                    return $"{basePrompt}\n\nYou must USE SCENE COMMANDS to set up the scene for this step. Don't just provide instructions - use commands like:\n- `scene.create` to create GameObjects\n- `scene.addcomponent` to add components\n- `scene.setfield` to configure properties\n\nFormat each command separately and execute them one by one.\n{commonInstructions}";
                     
                 case PlanStepType.Guidance:
-                    return $"{basePrompt}\n\nPlease provide detailed guidance on how to accomplish this step, including best practices and any potential issues to watch out for.";
+                    return $"{basePrompt}\n\nProvide detailed guidance on how to accomplish this step. Include specific code examples, scene commands, or other concrete actions that can be taken rather than general advice.\n{commonInstructions}";
                     
                 default:
-                    return basePrompt;
+                    return basePrompt + commonInstructions;
             }
         }
         
@@ -576,12 +618,104 @@ namespace AICodingAssistant.Planning
                     break;
                     
                 case PlanStepType.SceneOperation:
-                    // Could potentially send commands to a scene manipulation service
-                    // For now, we'll just provide instructions to the user
+                    // Extract and execute scene commands from the response
+                    var sceneCommands = ExtractSceneCommands(aiResponse);
+                    if (sceneCommands.Count > 0)
+                    {
+                        step.Result += "\n\nExtracted Scene Commands:";
+                        foreach (var cmd in sceneCommands)
+                        {
+                            step.Result += $"\n- {cmd}";
+                            
+                            // Find the AICodingAssistantWindow to execute scene commands
+                            var window = EditorWindow.GetWindow<AICodingAssistant.Editor.AICodingAssistantWindow>();
+                            if (window != null)
+                            {
+                                // Using reflection to access the private ProcessSceneCommand method
+                                var method = window.GetType().GetMethod("ProcessSceneCommand", 
+                                    System.Reflection.BindingFlags.NonPublic | 
+                                    System.Reflection.BindingFlags.Instance);
+                                
+                                if (method != null)
+                                {
+                                    try
+                                    {
+                                        var result = method.Invoke(window, new object[] { cmd }) as string;
+                                        step.Result += $" (Result: {result})";
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.LogError($"Error executing scene command: {ex.Message}");
+                                        step.Result += $" (Error: {ex.Message})";
+                                    }
+                                }
+                                else
+                                {
+                                    step.Result += " (Could not find method to execute scene command)";
+                                }
+                            }
+                            else
+                            {
+                                step.Result += " (Could not find AI Coding Assistant window)";
+                            }
+                        }
+                    }
                     break;
             }
             
+            // Look for general code edit blocks regardless of step type
+            if (step.StepType != PlanStepType.ScriptCreation && !string.IsNullOrEmpty(aiResponse))
+            {
+                string scriptCode = ExtractCodeFromResponse(aiResponse);
+                if (!string.IsNullOrEmpty(scriptCode))
+                {
+                    step.Metadata["contains_code"] = "true";
+                    step.Result += "\n\nThis response contains code that could be saved to a script.";
+                }
+            }
+            
             await Task.CompletedTask; // Placeholder for when we add more async operations
+        }
+        
+        /// <summary>
+        /// Extract scene commands from an AI response
+        /// </summary>
+        /// <param name="response">The AI's response</param>
+        /// <returns>List of scene commands</returns>
+        private List<string> ExtractSceneCommands(string response)
+        {
+            List<string> commands = new List<string>();
+            
+            // Use regex to find commands enclosed in backticks
+            var matches = System.Text.RegularExpressions.Regex.Matches(response, 
+                @"`(scene\.\w+[^`]*)`");
+            
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                if (match.Groups.Count > 1 && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+                {
+                    commands.Add(match.Groups[1].Value.Trim());
+                }
+            }
+            
+            // Also check for commands written without backticks but on their own line
+            // that start with "scene."
+            var lineMatches = System.Text.RegularExpressions.Regex.Matches(response,
+                @"(?:^|\n)[\s]*(scene\.\w+[^\n]*)(?:$|\n)");
+            
+            foreach (System.Text.RegularExpressions.Match match in lineMatches)
+            {
+                if (match.Groups.Count > 1 && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+                {
+                    string cmd = match.Groups[1].Value.Trim();
+                    if (!commands.Contains(cmd))
+                    {
+                        commands.Add(cmd);
+                    }
+                }
+            }
+            
+            return commands;
         }
         
         /// <summary>

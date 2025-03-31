@@ -2958,7 +2958,10 @@ namespace AICodingAssistant.Editor
                     await ParseAndAddPlanSteps(response.Message, plan);
                     
                     // Add a system message to notify the user
-                    AddSystemMessage($"🎯 Generated plan: {plan.Name}\n\nPlan contains {plan.Steps.Count} steps. Switch to the Planning tab to view and execute the plan.", true);
+                    AddSystemMessage($"🎯 Generated plan: {plan.Name}\n\nPlan contains {plan.Steps.Count} steps. Starting execution automatically...", true);
+                    
+                    // Automatically start executing the plan
+                    PlanningSystem.Instance.ExecutePlan();
                 }
                 else
                 {
@@ -2972,6 +2975,9 @@ namespace AICodingAssistant.Editor
                     
                     // Add a system message to notify the user
                     AddSystemMessage($"⚠️ AI plan generation failed. Created a default plan instead. Error: {response.ErrorMessage}", true);
+                    
+                    // Start executing the default plan as well
+                    PlanningSystem.Instance.ExecutePlan();
                 }
             }
             catch (Exception ex)
@@ -2986,6 +2992,9 @@ namespace AICodingAssistant.Editor
                 
                 // Add a system message to notify the user
                 AddSystemMessage($"⚠️ Exception during AI plan generation. Created a default plan instead. Error: {ex.Message}", true);
+                
+                // Start executing the default plan as well
+                PlanningSystem.Instance.ExecutePlan();
             }
         }
         
