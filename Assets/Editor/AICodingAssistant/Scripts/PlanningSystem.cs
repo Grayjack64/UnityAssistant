@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEditor;
 using AICodingAssistant.AI;
+using AICodingAssistant.Scripts;
 
 namespace AICodingAssistant.Planning
 {

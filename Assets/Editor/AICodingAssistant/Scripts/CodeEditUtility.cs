@@ -485,6 +485,11 @@ namespace AICodingAssistant.Scripts
         /// <summary>
         /// Insert at a specific line number
         /// </summary>
-        InsertAtLine
+        InsertAtLine,
+        
+        /// <summary>
+        /// Replace a region of code between specific markers or lines
+        /// </summary>
+        ReplaceRegion
     }
 } 
