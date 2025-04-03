@@ -85,94 +85,49 @@ namespace AICodingAssistant.Scripts
         }
         
         /// <summary>
-        /// Apply code edits to the specified script
+        /// Apply multiple code edits to a file
         /// </summary>
-        /// <param name="filePath">Path to the file</param>
+        /// <param name="filePath">Path to the file to edit</param>
         /// <param name="edits">List of edits to apply</param>
         /// <returns>True if successful</returns>
         public static bool ApplyEdits(string filePath, List<CodeEdit> edits)
         {
+            if (edits == null || edits.Count == 0)
+            {
+                Debug.LogWarning("No edits to apply");
+                return false;
+            }
+            
+            Debug.Log($"Applying {edits.Count} edits to {filePath}");
+            
             try
             {
-                Debug.Log($"Attempting to apply {edits.Count} edits to {filePath}");
+                bool isNewFile = !File.Exists(filePath);
+                string originalContent = isNewFile ? "" : File.ReadAllText(filePath);
                 
-                string originalContent = "";
-                string modifiedContent = "";
-                bool isNewFile = false;
-                
-                // Check if the file exists
-                if (!File.Exists(filePath))
-                {
-                    // File doesn't exist - check if we have a full file edit to create it
-                    bool hasFullFileEdit = edits.Any(e => e.Type == EditType.FullFileEdit);
-                    if (hasFullFileEdit)
-                    {
-                        Debug.Log($"File not found: {filePath} - Will create it with the provided content");
-                        isNewFile = true;
-                        originalContent = ""; // Empty for new files
-                        modifiedContent = ""; // Will be set with full content edit
-                    }
-                    else
-                    {
-                        Debug.LogError($"File not found: {filePath} - Cannot apply partial edits to non-existent file");
-                        return false;
-                    }
-                }
-                else
-                {
-                    // Read existing file content
-                    Debug.Log($"Reading existing file content from {filePath}");
-                    originalContent = File.ReadAllText(filePath);
-                    modifiedContent = originalContent;
-                    Debug.Log($"Successfully read {originalContent.Length} characters from file");
-                }
-                
-                // Generate description of the edits
+                // Keep track of what we're doing for better debug info
                 StringBuilder editDescription = new StringBuilder();
-                editDescription.AppendLine($"Applied {edits.Count} edit(s):");
+                editDescription.AppendLine(isNewFile ? "Created new file:" : "Edited file:");
+                editDescription.AppendLine(filePath);
                 
-                // Apply edits (in correct order)
-                int editCount = 0;
+                // Apply all edits to create the modified content
+                string modifiedContent = originalContent;
                 foreach (var edit in edits)
                 {
-                    editCount++;
-                    Debug.Log($"Applying edit {editCount}/{edits.Count}, type: {edit.Type}");
+                    editDescription.AppendLine($"- {edit.Type} edit");
                     
                     switch (edit.Type)
                     {
-                        case EditType.FullFileEdit:
-                            if (edit.FilePath == filePath)
-                            {
-                                Debug.Log("Replacing entire file content");
-                                modifiedContent = edit.Content;
-                                editDescription.AppendLine(isNewFile ? 
-                                    "- Created file with content" : 
-                                    "- Replaced entire file content");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"FilePath mismatch: edit has path {edit.FilePath} but we're editing {filePath}");
-                            }
-                            break;
-                            
-                        case EditType.ReplaceSnippet:
-                            Debug.Log($"Replacing snippet: '{edit.OldContent?.Substring(0, Math.Min(50, edit.OldContent?.Length ?? 0))}...'");
-                            if (modifiedContent.Contains(edit.OldContent))
-                            {
-                                modifiedContent = modifiedContent.Replace(edit.OldContent, edit.Content);
-                                string shortOldContent = edit.OldContent.Length > 50 ? edit.OldContent.Substring(0, 47) + "..." : edit.OldContent;
-                                editDescription.AppendLine($"- Replaced: \"{shortOldContent}\"");
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"Could not find snippet to replace. Snippet not found in file content.");
-                            }
-                            break;
-                            
                         case EditType.InsertAtLine:
-                            Debug.Log($"Inserting at line {edit.LineNumber}");
                             modifiedContent = InsertAtLine(modifiedContent, edit.LineNumber, edit.Content);
-                            editDescription.AppendLine($"- Inserted code at line {edit.LineNumber}");
+                            break;
+                            
+                        case EditType.ReplaceRegion:
+                            // Not implemented yet
+                            break;
+                            
+                        case EditType.FullFileEdit:
+                            modifiedContent = edit.Content;
                             break;
                     }
                 }
@@ -190,6 +145,16 @@ namespace AICodingAssistant.Scripts
                         string backupPath = filePath + ".bak";
                         Debug.Log($"Creating backup at {backupPath}");
                         File.WriteAllText(backupPath, originalContent);
+                        
+                        // VERIFICATION: Verify backup was created
+                        if (!File.Exists(backupPath))
+                        {
+                            Debug.LogError($"Failed to create backup at {backupPath}");
+                        }
+                        else
+                        {
+                            Debug.Log($"Backup created successfully at {backupPath}");
+                        }
                     }
                     
                     // Ensure directory exists
@@ -199,29 +164,83 @@ namespace AICodingAssistant.Scripts
                     {
                         Debug.Log($"Creating directory: {directory}");
                         Directory.CreateDirectory(directory);
+                        
+                        // VERIFICATION: Verify directory was created
+                        if (!Directory.Exists(directory))
+                        {
+                            Debug.LogError($"Failed to create directory: {directory}");
+                            return false;
+                        }
                     }
                     
                     // Write modified content
                     Debug.Log($"Writing modified content to {filePath}...");
                     File.WriteAllText(filePath, modifiedContent);
                     
-                    // Verify file was written
-                    if (File.Exists(filePath))
-                    {
-                        string newContent = File.ReadAllText(filePath);
-                        Debug.Log($"File written with {newContent.Length} characters");
-                    }
-                    else
+                    // VERIFICATION STEP 1: Verify file was written
+                    if (!File.Exists(filePath))
                     {
                         Debug.LogError($"File was not created at {filePath} even though no exception was thrown");
+                        return false;
                     }
+                    
+                    // VERIFICATION STEP 2: Read back content to verify it was written correctly
+                    string writtenContent = File.ReadAllText(filePath);
+                    if (writtenContent.Length != modifiedContent.Length)
+                    {
+                        Debug.LogWarning($"File content length mismatch. Expected: {modifiedContent.Length}, Actual: {writtenContent.Length}");
+                    }
+                    Debug.Log($"File written with {writtenContent.Length} characters");
                     
                     // Track the change
                     ChangeTracker.Instance.RecordChange(filePath, isNewFile ? "Create" : "Edit", editDescription.ToString());
                     
-                    // Refresh Asset Database
-                    Debug.Log("Refreshing AssetDatabase...");
-                    AssetDatabase.Refresh();
+                    // SEQUENTIAL OPERATION: Import asset with forced update
+                    if (filePath.StartsWith("Assets/"))
+                    {
+                        Debug.Log($"Importing asset at path: {filePath}");
+                        
+                        // First ensure Unity is aware of the file
+                        AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                        
+                        // Then explicitly import the asset with forced update
+                        AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceUpdate);
+                        
+                        // VERIFICATION STEP 3: Check if Unity recognizes the asset
+                        UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                        if (asset == null)
+                        {
+                            Debug.LogWarning($"Asset import verification: Asset was not found in AssetDatabase at path: {filePath}");
+                            
+                            // Try once more with delay
+                            Debug.Log("Attempting secondary import with delay...");
+                            EditorApplication.delayCall += () => {
+                                AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                                AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceUpdate);
+                                
+                                // Final verification
+                                UnityEngine.Object secondaryAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                                if (secondaryAsset != null)
+                                {
+                                    Debug.Log($"Secondary asset import successful: {filePath}");
+                                }
+                                else
+                                {
+                                    Debug.LogError($"Secondary asset import failed: {filePath}");
+                                }
+                            };
+                        }
+                        else
+                        {
+                            Debug.Log($"Asset import verification: Successfully loaded asset at {filePath}");
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"Path doesn't start with 'Assets/': {filePath}. Using global refresh instead.");
+                        AssetDatabase.Refresh();
+                    }
+                    
                     if (isNewFile)
                     {
                         Debug.Log($"Successfully created file: {filePath}");
@@ -275,6 +294,13 @@ namespace AICodingAssistant.Scripts
                     {
                         Directory.CreateDirectory(directory);
                         Debug.Log($"Directory created successfully: {directory}");
+                        
+                        // Verify directory creation
+                        if (!Directory.Exists(directory))
+                        {
+                            Debug.LogError($"Directory creation failed - directory still doesn't exist: {directory}");
+                            return false;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -293,12 +319,20 @@ namespace AICodingAssistant.Scripts
                 Debug.Log($"Writing file content to {filePath}...");
                 File.WriteAllText(filePath, content);
                 
-                // Verify file was created
+                // EXPLICIT VERIFICATION STEP 1: Check if file exists on disk
                 if (!File.Exists(filePath))
                 {
                     Debug.LogError($"File was not created at {filePath} even though no exception was thrown.");
                     return false;
                 }
+                
+                // VERIFICATION STEP 2: Read back the file to ensure content was written correctly
+                string writtenContent = File.ReadAllText(filePath);
+                if (writtenContent.Length != content.Length)
+                {
+                    Debug.LogWarning($"File content length mismatch. Expected: {content.Length}, Actual: {writtenContent.Length}");
+                }
+                Debug.Log($"Successfully wrote {writtenContent.Length} characters to file");
                 
                 // Track the change
                 string className = "Unknown";
@@ -309,9 +343,52 @@ namespace AICodingAssistant.Scripts
                 }
                 ChangeTracker.Instance.RecordChange(filePath, "Create", $"Created new script '{className}'");
                 
-                // Refresh Asset Database
-                Debug.Log("Refreshing AssetDatabase...");
-                AssetDatabase.Refresh();
+                // SEQUENTIAL OPERATION: Import asset with forced update
+                if (filePath.StartsWith("Assets/"))
+                {
+                    Debug.Log($"Importing asset at path: {filePath}");
+                    
+                    // First refresh to make Unity aware of the file
+                    AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                    
+                    // Then explicitly import the specific asset with forced update
+                    AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceUpdate);
+                    
+                    // VERIFICATION STEP 3: Check if Unity recognizes the asset
+                    UnityEngine.Object asset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                    if (asset == null)
+                    {
+                        Debug.LogWarning($"Asset import verification: Asset was not found in AssetDatabase at path: {filePath}");
+                        
+                        // Try one more refresh with delay
+                        Debug.Log("Attempting secondary import with delay...");
+                        EditorApplication.delayCall += () => {
+                            AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
+                            AssetDatabase.ImportAsset(filePath, ImportAssetOptions.ForceUpdate);
+                            
+                            // Final verification
+                            UnityEngine.Object secondaryAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(filePath);
+                            if (secondaryAsset != null)
+                            {
+                                Debug.Log($"Secondary asset import successful: {filePath}");
+                            }
+                            else
+                            {
+                                Debug.LogError($"Secondary asset import failed: {filePath}");
+                            }
+                        };
+                    }
+                    else
+                    {
+                        Debug.Log($"Asset import verification: Successfully loaded asset at {filePath}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"Path doesn't start with 'Assets/': {filePath}. Using global refresh instead.");
+                    AssetDatabase.Refresh();
+                }
+                
                 Debug.Log($"Successfully created script: {filePath}");
                 return true;
             }

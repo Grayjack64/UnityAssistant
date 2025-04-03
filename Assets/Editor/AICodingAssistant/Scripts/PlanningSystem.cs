@@ -601,18 +601,45 @@ IMPORTANT: You must EXECUTE this step directly, not just describe what to do.
                         string className = ExtractClassNameFromCode(scriptCode);
                         string scriptPath = $"Assets/{className}.cs";
                         
-                        try
+                        Debug.Log($"Planning system attempting to create script: {scriptPath}");
+                        
+                        // Use CodeEditUtility to create the script with verification
+                        bool success = CodeEditUtility.CreateScript(scriptPath, scriptCode);
+                        
+                        if (success)
                         {
-                            File.WriteAllText(scriptPath, scriptCode);
-                            AssetDatabase.Refresh();
-                            step.Metadata["created_script_path"] = scriptPath;
-                            step.Result += $"\n\nCreated script at: {scriptPath}";
-                            Debug.Log($"Created script at: {scriptPath}");
+                            // Additional verification after script creation
+                            bool fileExists = File.Exists(scriptPath);
+                            bool assetExists = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(scriptPath) != null;
+                            
+                            Debug.Log($"Script creation verification: File exists: {fileExists}, Asset exists: {assetExists}");
+                            
+                            if (fileExists && assetExists)
+                            {
+                                step.Metadata["created_script_path"] = scriptPath;
+                                step.Result += $"\n\nSuccessfully created script at: {scriptPath}";
+                                Debug.Log($"Script creation confirmed: {scriptPath}");
+                                
+                                // Try to open the file in the editor
+                                var scriptAsset = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(scriptPath);
+                                if (scriptAsset != null)
+                                {
+                                    EditorApplication.delayCall += () => {
+                                        AssetDatabase.OpenAsset(scriptAsset);
+                                        Debug.Log($"Opened script in editor: {scriptPath}");
+                                    };
+                                }
+                            }
+                            else
+                            {
+                                step.Result += $"\n\nScript creation partial success: File on disk: {fileExists}, Asset in database: {assetExists}";
+                                Debug.LogWarning($"Script verification issues: File exists: {fileExists}, Asset exists: {assetExists}");
+                            }
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            Debug.LogError($"Error creating script: {ex.Message}");
-                            step.Result += $"\n\nFailed to create script: {ex.Message}";
+                            step.Result += $"\n\nFailed to create script at: {scriptPath}";
+                            Debug.LogError($"Script creation failed for: {scriptPath}");
                         }
                     }
                     break;
@@ -642,6 +669,9 @@ IMPORTANT: You must EXECUTE this step directly, not just describe what to do.
                                     {
                                         var result = method.Invoke(window, new object[] { cmd }) as string;
                                         step.Result += $" (Result: {result})";
+                                        
+                                        // Add a small delay between commands to ensure they complete
+                                        await Task.Delay(250);
                                     }
                                     catch (Exception ex)
                                     {
