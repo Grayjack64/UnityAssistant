@@ -1,0 +1,19 @@
+{
+    "name": "AICodingAssistant.AI",
+    "rootNamespace": "AICodingAssistant",
+    "references": [
+        "Newtonsoft.Json",
+        "AICodingAssistant.Data"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

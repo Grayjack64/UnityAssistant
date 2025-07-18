@@ -29,29 +29,6 @@ namespace AICodingAssistant.AI
         public abstract string GetName();
 
         /// <summary>
-        /// Factory method to create the appropriate backend
-        /// </summary>
-        /// <param name="backendType">The type of backend to create</param>
-        /// <returns>An instance of the requested backend</returns>
-        public static AIBackend CreateBackend(AIBackendType backendType)
-        {
-            switch (backendType)
-            {
-                case AIBackendType.Grok:
-                    return new GrokBackend();
-                case AIBackendType.Claude:
-                    return new ClaudeBackend();
-                case AIBackendType.LocalLLM:
-                    return new OllamaBackend();
-                case AIBackendType.Gemini:
-                    return new GeminiBackend();
-                default:
-                    Debug.LogError($"Unknown backend type: {backendType}");
-                    return null;
-            }
-        }
-        
-        /// <summary>
         /// Simple wrapper for backwards compatibility
         /// </summary>
         /// <param name="prompt">The prompt to send</param>
@@ -73,4 +50,4 @@ namespace AICodingAssistant.AI
         LocalLLM,
         Gemini
     }
-} 
+}
