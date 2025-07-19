@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp-Editor::AICodingAssistant.Scripts.PluginSettings
   GrokApiKey: 
   ClaudeApiKey: 
-  GeminiApiKey: 
+  GeminiApiKey: AIzaSyBwhDd4RntSNKlNjf2tYWxwbHrAxlEFK0E
   OllamaUrl: http://localhost:11434
   OllamaModel: Gemma3n
   enablePromptLogging: 1
