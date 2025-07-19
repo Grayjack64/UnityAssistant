@@ -13,106 +13,64 @@ namespace AICodingAssistant.Editor
     public class AIChatController
     {
         private List<ChatMessage> chatHistory = new List<ChatMessage>();
-        private AIBackend currentBackend;
-        private EnhancedConsoleMonitor consoleMonitor;
-        private CodebaseContext codebaseContext;
+        private AIOrchestrator orchestrator;
         private AICodingAssistantWindow window;
 
-        public AIChatController(AIBackend backend, EnhancedConsoleMonitor monitor, CodebaseContext context, AICodingAssistantWindow w)
+        public AIChatController(AIBackend localBackend, AIBackend mainBackend, AICodingAssistantWindow w)
         {
-            currentBackend = backend;
-            consoleMonitor = monitor;
-            codebaseContext = context;
-            window = w;
+            this.orchestrator = new AIOrchestrator(localBackend, mainBackend);
+            this.window = w;
         }
 
         public List<ChatMessage> ChatHistory => chatHistory;
 
-        public async Task SendChatMessage(string userQuery, bool includeConsoleLogs, bool includeCodeContext, bool includeProjectSummary, string selectedScriptPath)
+        public async Task SendChatMessage(string userQuery)
         {
-            if (string.IsNullOrWhiteSpace(userQuery))
-                return;
+            if (string.IsNullOrWhiteSpace(userQuery)) return;
 
-            string prompt = BuildAIPrompt(userQuery, includeConsoleLogs, includeCodeContext, includeProjectSummary, selectedScriptPath);
+            AddMessage(userQuery, true);
 
-            chatHistory.Add(new ChatMessage
-            {
-                IsUser = true,
-                Content = userQuery,
-                Timestamp = DateTime.Now
-            });
+            // Get chat history and previous response to send to the orchestrator
+            string history = GetChatHistoryAsString();
+            string previousResponse = GetLastAIResponse();
 
-            var aiResponse = await currentBackend.SendRequest(prompt);
+            string aiResponse = await orchestrator.ProcessUserRequest(userQuery, history, previousResponse);
 
-            chatHistory.Add(new ChatMessage
-            {
-                IsUser = false,
-                Content = aiResponse.Success ? aiResponse.Message : $"Error: {aiResponse.ErrorMessage}",
-                Timestamp = DateTime.Now
-            });
-
-            ProcessAIResponse(aiResponse.Message);
+            AddMessage(aiResponse, false);
         }
-
-        public void AddSystemMessage(string content, bool isFromUIAction = false)
+        
+        private void AddMessage(string content, bool isUser)
         {
             chatHistory.Add(new ChatMessage
             {
-                IsUser = false,
+                IsUser = isUser,
                 Content = content,
                 Timestamp = DateTime.Now,
-                IsNew = true,
-                IsSystemMessage = true
+                IsNew = true
             });
             window.Repaint();
         }
 
-        private string BuildAIPrompt(string userMessage, bool includeConsoleLogs, bool includeCodeContext, bool includeProjectSummary, string selectedScriptPath)
+        private string GetChatHistoryAsString()
         {
-            var prompt = new StringBuilder();
-            prompt.AppendLine("You are an AI assistant for Unity development.");
-
-            if (includeProjectSummary)
+            var sb = new StringBuilder();
+            foreach(var msg in chatHistory)
             {
-                // This will be implemented later
+                sb.AppendLine($"{(msg.IsUser ? "User" : "AI")}: {msg.Content}");
             }
-
-            if (includeConsoleLogs && consoleMonitor != null)
-            {
-                var recentLogs = consoleMonitor.GetRecentLogs(10);
-                if (recentLogs.Count > 0)
-                {
-                    prompt.AppendLine("Recent Console Logs:");
-                    foreach (var log in recentLogs)
-                    {
-                        prompt.AppendLine($"[{log.Type}] {log.Message}");
-                    }
-                }
-            }
-
-            if (includeCodeContext && !string.IsNullOrEmpty(selectedScriptPath))
-            {
-                prompt.AppendLine($"Selected Script ({selectedScriptPath}):");
-                prompt.AppendLine("```csharp");
-                prompt.AppendLine(File.ReadAllText(selectedScriptPath));
-                prompt.AppendLine("```");
-            }
-
-            prompt.AppendLine("Chat History:");
-            foreach (var message in chatHistory)
-            {
-                prompt.AppendLine(message.IsUser ? $"User: {message.Content}" : $"AI: {message.Content}");
-            }
-
-            prompt.AppendLine($"User: {userMessage}");
-            prompt.AppendLine("AI:");
-
-            return prompt.ToString();
+            return sb.ToString();
         }
 
-        private void ProcessAIResponse(string response)
+        private string GetLastAIResponse()
         {
-            // Placeholder for command processing
+            for (int i = chatHistory.Count - 1; i >= 0; i--)
+            {
+                if (!chatHistory[i].IsUser)
+                {
+                    return chatHistory[i].Content;
+                }
+            }
+            return null;
         }
     }
 }

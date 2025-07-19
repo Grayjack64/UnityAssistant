@@ -25,7 +25,8 @@ namespace AICodingAssistant.Editor
         public ScaffolderTab(AICodingAssistantWindow window)
         {
             this.aiWindow = window;
-            this.scaffolderManager = new ProjectScaffolderManager(window.CurrentBackend);
+            // Corrected: The scaffolder should use the powerful MainBackend for generation
+            this.scaffolderManager = new ProjectScaffolderManager(window.MainBackend);
         }
 
         public void Draw()

@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace AICodingAssistant.Scripts
+namespace AICodingAssistant.Data
 {
     [CreateAssetMenu(fileName = "AICompanion_Settings", menuName = "AI Coding Assistant/Settings", order = 1)]
     public class PluginSettings : ScriptableObject
@@ -12,6 +12,9 @@ namespace AICodingAssistant.Scripts
 
         [Header("Ollama (Local LLM)")]
         public string OllamaUrl = "http://localhost:11434";
-        public string OllamaModel = "llama2";
+        public string OllamaModel = "Gemma3n";
+
+        [Header("Debugging")]
+        public bool enablePromptLogging = true; // Set to true by default for easy testing
     }
 }

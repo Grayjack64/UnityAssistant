@@ -1,142 +1,87 @@
 using System;
-using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
-using UnityEngine;
-using UnityEditor;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using UnityEngine;
+using UnityEngine.Networking;
 
 namespace AICodingAssistant.AI
 {
     /// <summary>
-    /// Implementation of the AIBackend for local LLMs via Ollama
+    /// Handles communication with a local Ollama server.
     /// </summary>
     public class OllamaBackend : AIBackend
     {
-        private static readonly HttpClient client = new HttpClient();
-        private string baseUrl;
-        private string modelName;
-        
-        /// <summary>
-        /// Create a new OllamaBackend with default settings
-        /// </summary>
-        public OllamaBackend()
-        {
-            // Default values
-            baseUrl = "http://localhost:11434";
-            modelName = "llama2"; // Default model
-            
-            // Try to load saved settings
-            if (EditorPrefs.HasKey("OllamaURL"))
-            {
-                baseUrl = EditorPrefs.GetString("OllamaURL");
-            }
-            
-            if (EditorPrefs.HasKey("OllamaModel"))
-            {
-                modelName = EditorPrefs.GetString("OllamaModel");
-            }
-        }
-        
-        /// <summary>
-        /// Send a request to the Ollama API
-        /// </summary>
-        /// <param name="prompt">The prompt to send to the AI</param>
-        /// <returns>The AI's response</returns>
+        private string serverUrl = "http://localhost:11434";
+        private string model = "gemma";
+
+        public void SetServerUrl(string url) => serverUrl = url;
+        public void SetModel(string modelName) => model = modelName;
+
+        public override string GetName() => "Local LLM (Ollama)";
+
+        public override bool IsConfigured() => !string.IsNullOrEmpty(serverUrl) && !string.IsNullOrEmpty(model);
+
         public override async Task<AIResponse> SendRequest(string prompt)
         {
-            try
+            if (!IsConfigured())
             {
-                var request = new
+                return new AIResponse { Success = false, ErrorMessage = "Ollama backend is not configured." };
+            }
+
+            // --- THE FIX ---
+            // Use Newtonsoft.Json for more reliable serialization, especially with anonymous types.
+            var requestBody = new
+            {
+                model = this.model,
+                prompt = prompt,
+                stream = false
+            };
+            string jsonBody = JsonConvert.SerializeObject(requestBody);
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonBody);
+
+            // Clean up the server URL to prevent common errors (e.g., trailing slashes)
+            string cleanedUrl = serverUrl.Trim().TrimEnd('/');
+            string fullUrl = $"{cleanedUrl}/api/generate";
+
+            using (var request = new UnityWebRequest(fullUrl, "POST"))
+            {
+                request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                request.timeout = 300;
+
+                try
                 {
-                    model = modelName,
-                    prompt = prompt,
-                    stream = false
-                };
-                
-                var content = new StringContent(
-                    JsonConvert.SerializeObject(request),
-                    Encoding.UTF8,
-                    "application/json");
-                
-                var response = await client.PostAsync($"{baseUrl}/api/generate", content);
-                
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Debug.LogError($"Ollama API error: {response.StatusCode} - {errorContent}");
-                    return AIResponse.CreateError($"Error communicating with Ollama: {response.StatusCode} - {errorContent}");
+                    var asyncOp = request.SendWebRequest();
+
+                    while (!asyncOp.isDone)
+                    {
+                        await Task.Yield();
+                    }
+
+                    if (request.result == UnityWebRequest.Result.Success)
+                    {
+                        string responseJson = request.downloadHandler.text;
+                        JObject responseObject = JObject.Parse(responseJson);
+                        string message = responseObject["response"]?.ToString().Trim();
+                        return new AIResponse { Success = true, Message = message };
+                    }
+                    else
+                    {
+                        string error = $"Error communicating with Ollama: {request.error}";
+                        Debug.LogError(error + $" (URL: {fullUrl})"); // Log the URL for easier debugging
+                        return new AIResponse { Success = false, ErrorMessage = error };
+                    }
                 }
-                
-                var responseBody = await response.Content.ReadAsStringAsync();
-                var responseObj = JsonConvert.DeserializeObject<OllamaResponse>(responseBody);
-                
-                string responseText = responseObj?.Response ?? "No response from Ollama";
-                return AIResponse.CreateSuccess(responseText);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Error communicating with Ollama: {ex.Message}");
-                return AIResponse.CreateError($"Error: {ex.Message}");
+                catch (Exception e)
+                {
+                    string error = $"Exception communicating with Ollama: {e.Message}";
+                    Debug.LogError(error);
+                    return new AIResponse { Success = false, ErrorMessage = error };
+                }
             }
         }
-        
-        /// <summary>
-        /// Check if this backend is properly configured
-        /// </summary>
-        /// <returns>True if the backend is ready to use</returns>
-        public override bool IsConfigured()
-        {
-            // Since this is a local LLM, we just check if we have a model name
-            return !string.IsNullOrEmpty(modelName);
-        }
-        
-        /// <summary>
-        /// Get the name of this backend
-        /// </summary>
-        /// <returns>Backend name</returns>
-        public override string GetName()
-        {
-            return "Local LLM (Ollama)";
-        }
-        
-        /// <summary>
-        /// Set the Ollama model to use
-        /// </summary>
-        /// <param name="model">Model name (e.g., "llama2", "codellama")</param>
-        public void SetModel(string model)
-        {
-            modelName = model;
-            EditorPrefs.SetString("OllamaModel", model);
-        }
-        
-        /// <summary>
-        /// Set the Ollama server URL
-        /// </summary>
-        /// <param name="url">Server URL (e.g., "http://localhost:11434")</param>
-        public void SetServerUrl(string url)
-        {
-            baseUrl = url;
-            EditorPrefs.SetString("OllamaURL", url);
-        }
     }
-    
-    /// <summary>
-    /// Class to deserialize Ollama API responses
-    /// </summary>
-    [Serializable]
-    public class OllamaResponse
-    {
-        [JsonProperty("response")]
-        public string Response { get; set; }
-        
-        [JsonProperty("model")]
-        public string Model { get; set; }
-        
-        [JsonProperty("created_at")]
-        public string CreatedAt { get; set; }
-        
-        [JsonProperty("done")]
-        public bool Done { get; set; }
-    }
-} 
+}

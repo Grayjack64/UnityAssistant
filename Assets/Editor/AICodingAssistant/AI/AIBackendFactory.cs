@@ -1,4 +1,4 @@
-using AICodingAssistant.Scripts;
+using AICodingAssistant.Data; // Corrected: using .Data instead of .Scripts
 using UnityEngine;
 
 namespace AICodingAssistant.AI
@@ -14,7 +14,7 @@ namespace AICodingAssistant.AI
         /// <param name="backendType">The type of backend to create.</param>
         /// <param name="settings">The plugin settings asset.</param>
         /// <returns>An instance of the requested backend.</returns>
-        public static AIBackend CreateBackend(AIBackendType backendType, PluginSettings settings)
+        public static AIBackend CreateBackend(AIBackendType backendType, PluginSettings settings) // Corrected: No longer needs Scripts.PluginSettings
         {
             switch (backendType)
             {
@@ -26,7 +26,6 @@ namespace AICodingAssistant.AI
                 case AIBackendType.Claude:
                     var claudeBackend = new ClaudeBackend();
                     claudeBackend.SetApiKey(settings.ClaudeApiKey);
-                    // In the future, the model can also be set from settings
                     claudeBackend.SetModel("claude-3-opus-20240229");
                     return claudeBackend;
 
@@ -39,8 +38,7 @@ namespace AICodingAssistant.AI
                 case AIBackendType.Gemini:
                     var geminiBackend = new GeminiBackend();
                     geminiBackend.SetApiKey(settings.GeminiApiKey);
-                    // In the future, the model can also be set from settings
-                    geminiBackend.SetModel("gemini-2.0-flash");
+                    geminiBackend.SetModel("gemini-1.5-flash");
                     return geminiBackend;
 
                 default:
