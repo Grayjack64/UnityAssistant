@@ -12,9 +12,5 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 810efccdedf8c8a4ca34ff455e45443a, type: 3}
   m_Name: AICompanion_Settings
   m_EditorClassIdentifier: Assembly-CSharp-Editor::AICodingAssistant.Scripts.PluginSettings
-  GrokApiKey: 
-  ClaudeApiKey: 
   GeminiApiKey: AIzaSyBwhDd4RntSNKlNjf2tYWxwbHrAxlEFK0E
-  OllamaUrl: http://localhost:11434
-  OllamaModel: Gemma3n
   enablePromptLogging: 1

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using AICodingAssistant.AI;
@@ -16,9 +15,10 @@ namespace AICodingAssistant.Editor
         private AIOrchestrator orchestrator;
         private AICodingAssistantWindow window;
 
-        public AIChatController(AIBackend localBackend, AIBackend mainBackend, AICodingAssistantWindow w)
+        // Corrected constructor with 3 arguments
+        public AIChatController(AIBackend mainBackend, EnhancedConsoleMonitor monitor, AICodingAssistantWindow w)
         {
-            this.orchestrator = new AIOrchestrator(localBackend, mainBackend);
+            this.orchestrator = new AIOrchestrator(mainBackend, monitor);
             this.window = w;
         }
 
@@ -30,11 +30,10 @@ namespace AICodingAssistant.Editor
 
             AddMessage(userQuery, true);
 
-            // Get chat history and previous response to send to the orchestrator
             string history = GetChatHistoryAsString();
-            string previousResponse = GetLastAIResponse();
-
-            string aiResponse = await orchestrator.ProcessUserRequest(userQuery, history, previousResponse);
+            
+            // Corrected method call with 2 arguments
+            string aiResponse = await orchestrator.ProcessUserRequest(userQuery, history);
 
             AddMessage(aiResponse, false);
         }
@@ -54,23 +53,17 @@ namespace AICodingAssistant.Editor
         private string GetChatHistoryAsString()
         {
             var sb = new StringBuilder();
-            foreach(var msg in chatHistory)
+            // Send a limited amount of history to keep prompts concise
+            int historyLimit = 10;
+            var relevantHistory = chatHistory.Count > historyLimit 
+                ? chatHistory.GetRange(chatHistory.Count - historyLimit, historyLimit) 
+                : chatHistory;
+
+            foreach(var msg in relevantHistory)
             {
                 sb.AppendLine($"{(msg.IsUser ? "User" : "AI")}: {msg.Content}");
             }
             return sb.ToString();
-        }
-
-        private string GetLastAIResponse()
-        {
-            for (int i = chatHistory.Count - 1; i >= 0; i--)
-            {
-                if (!chatHistory[i].IsUser)
-                {
-                    return chatHistory[i].Content;
-                }
-            }
-            return null;
         }
     }
 }

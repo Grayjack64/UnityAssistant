@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using AICodingAssistant.AI;
 using AICodingAssistant.Data;
 using AICodingAssistant.Scripts;
@@ -14,19 +13,15 @@ namespace AICodingAssistant.Editor
         private string[] tabOptions = { "Chat", "Scaffolder", "Settings" };
         private Vector2 scrollPosition;
 
-        // We now manage two backends
-        private AIBackend localBackend;
+        // We now only need a single backend instance
         private AIBackend mainBackend;
-        private AIBackendType selectedMainBackendType = AIBackendType.Gemini; // Default main AI
         private PluginSettings settings;
-
-        public AIChatController ChatController { get; private set; }
         
+        private EnhancedConsoleMonitor consoleMonitor;
+        public AIChatController ChatController { get; private set; }
         private ScaffolderTab scaffolderTab;
         private ChatTab chatTab;
 
-        // Expose both backends
-        public AIBackend LocalBackend => localBackend;
         public AIBackend MainBackend => mainBackend;
         public PluginSettings Settings => settings;
 
@@ -40,16 +35,19 @@ namespace AICodingAssistant.Editor
         private void OnEnable()
         {
             LoadSettings(); 
-            InitializeBackends();
+            consoleMonitor = new EnhancedConsoleMonitor();
+            consoleMonitor.StartCapturing();
+            InitializeBackend();
 
-            // The ChatController now takes the local and main backends
-            ChatController = new AIChatController(localBackend, mainBackend, this);
+            // The ChatController now takes the single main backend
+            ChatController = new AIChatController(mainBackend, consoleMonitor, this);
             scaffolderTab = new ScaffolderTab(this);
             chatTab = new ChatTab(this, ChatController);
         }
 
         private void OnDisable()
         {
+            if (consoleMonitor != null) consoleMonitor.StopCapturing();
             SaveSettings();
         }
 
@@ -65,9 +63,7 @@ namespace AICodingAssistant.Editor
             
             switch (currentTabIndex)
             {
-                case 0:
-                    chatTab.Draw();
-                    break;
+                case 0: chatTab.Draw(); break;
                 case 1:
                     scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
                     scaffolderTab.Draw();
@@ -83,28 +79,10 @@ namespace AICodingAssistant.Editor
 
         private void DrawSettingsTab()
         {
-            EditorGUILayout.LabelField("Main AI Backend (for execution)", EditorStyles.boldLabel);
-            
             EditorGUI.BeginChangeCheck();
-            selectedMainBackendType = (AIBackendType)EditorGUILayout.EnumPopup("Backend:", selectedMainBackendType);
-            if (EditorGUI.EndChangeCheck())
-            {
-                InitializeBackends();
-                // Re-initialize controllers that depend on the backends
-                ChatController = new AIChatController(localBackend, mainBackend, this);
-                chatTab = new ChatTab(this, ChatController);
-                scaffolderTab = new ScaffolderTab(this);
-            }
-            
-            EditorGUI.BeginChangeCheck();
-            settings.GrokApiKey = EditorGUILayout.TextField("Grok API Key", settings.GrokApiKey);
-            settings.ClaudeApiKey = EditorGUILayout.TextField("Claude API Key", settings.ClaudeApiKey);
-            settings.GeminiApiKey = EditorGUILayout.TextField("Gemini API Key", settings.GeminiApiKey);
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Local AI Backend (for planning)", EditorStyles.boldLabel);
-            settings.OllamaUrl = EditorGUILayout.TextField("Ollama URL", settings.OllamaUrl);
-            settings.OllamaModel = EditorGUILayout.TextField("Ollama Model", settings.OllamaModel);
+            EditorGUILayout.LabelField("Google Gemini API", EditorStyles.boldLabel);
+            settings.GeminiApiKey = EditorGUILayout.TextField("Gemini API Key", settings.GeminiApiKey);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Debugging", EditorStyles.boldLabel);
@@ -112,17 +90,20 @@ namespace AICodingAssistant.Editor
 
             if (EditorGUI.EndChangeCheck())
             {
+                // Re-initialize the backend if the API key changes
+                InitializeBackend();
+                ChatController = new AIChatController(mainBackend, consoleMonitor, this);
+                chatTab = new ChatTab(this, ChatController);
+                scaffolderTab = new ScaffolderTab(this);
                 SaveSettings();
             }
         }
         
-        private void InitializeBackends()
+        private void InitializeBackend()
         {
             if (settings == null) return;
-            // Always create the local backend from Ollama settings
-            localBackend = AIBackendFactory.CreateBackend(AIBackendType.LocalLLM, settings);
-            // Create the main backend based on user selection
-            mainBackend = AIBackendFactory.CreateBackend(selectedMainBackendType, settings);
+            // We now only create the main Gemini backend
+            mainBackend = AIBackendFactory.CreateBackend(settings);
         }
 
         private void LoadSettings()
@@ -147,10 +128,7 @@ namespace AICodingAssistant.Editor
 
         private void SaveSettings()
         {
-            if (settings != null)
-            {
-                EditorUtility.SetDirty(settings);
-            }
+            if (settings != null) EditorUtility.SetDirty(settings);
         }
     }
 }
