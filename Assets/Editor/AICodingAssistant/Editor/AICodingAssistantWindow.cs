@@ -9,18 +9,17 @@ namespace AICodingAssistant.Editor
 {
     public class AICodingAssistantWindow : EditorWindow
     {
+        // ... (keep all your existing variables)
         private int currentTabIndex = 0;
         private string[] tabOptions = { "Chat", "Scaffolder", "Settings" };
         private Vector2 scrollPosition;
-
-        // We now only need a single backend instance
         private AIBackend mainBackend;
         private PluginSettings settings;
-        
         private EnhancedConsoleMonitor consoleMonitor;
         public AIChatController ChatController { get; private set; }
         private ScaffolderTab scaffolderTab;
         private ChatTab chatTab;
+        private static AICodingAssistantWindow instance; // Keep a static reference to the window
 
         public AIBackend MainBackend => mainBackend;
         public PluginSettings Settings => settings;
@@ -29,22 +28,40 @@ namespace AICodingAssistant.Editor
         public static void ShowWindow()
         {
             var window = GetWindow<AICodingAssistantWindow>("AI Coding Assistant");
-            window.minSize = new Vector2(600, 800); 
+            window.minSize = new Vector2(600, 800);
+        }
+
+        // ADD THIS NEW STATIC METHOD
+        public static void AddSystemMessageToChat(string message)
+        {
+            if (instance != null && instance.ChatController != null)
+            {
+                // We use delayCall to make sure we're on the main thread for UI updates
+                EditorApplication.delayCall += () =>
+                {
+                    instance.ChatController.AddMessage(message, false, true); // The new 'isSystemMessage' flag
+                    instance.Repaint();
+                };
+            }
+            else
+            {
+                Debug.Log($"[AICodingAssistantWindow] System Message (window not focused): {message}");
+            }
         }
 
         private void OnEnable()
         {
-            LoadSettings(); 
+            instance = this; // Set the static instance when the window is enabled
+            LoadSettings();
             consoleMonitor = new EnhancedConsoleMonitor();
             consoleMonitor.StartCapturing();
             InitializeBackend();
 
-            // The ChatController now takes the single main backend
             ChatController = new AIChatController(mainBackend, consoleMonitor, this);
             scaffolderTab = new ScaffolderTab(this);
             chatTab = new ChatTab(this, ChatController);
         }
-
+        // ... (The rest of your AICodingAssistantWindow.cs file remains unchanged)
         private void OnDisable()
         {
             if (consoleMonitor != null) consoleMonitor.StopCapturing();

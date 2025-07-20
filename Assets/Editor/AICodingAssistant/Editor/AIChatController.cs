@@ -15,7 +15,6 @@ namespace AICodingAssistant.Editor
         private AIOrchestrator orchestrator;
         private AICodingAssistantWindow window;
 
-        // Corrected constructor with 3 arguments
         public AIChatController(AIBackend mainBackend, EnhancedConsoleMonitor monitor, AICodingAssistantWindow w)
         {
             this.orchestrator = new AIOrchestrator(mainBackend, monitor);
@@ -31,21 +30,21 @@ namespace AICodingAssistant.Editor
             AddMessage(userQuery, true);
 
             string history = GetChatHistoryAsString();
-            
-            // Corrected method call with 2 arguments
             string aiResponse = await orchestrator.ProcessUserRequest(userQuery, history);
 
             AddMessage(aiResponse, false);
         }
-        
-        private void AddMessage(string content, bool isUser)
+
+        // Add an optional 'isSystemMessage' parameter
+        public void AddMessage(string content, bool isUser, bool isSystemMessage = false)
         {
             chatHistory.Add(new ChatMessage
             {
                 IsUser = isUser,
                 Content = content,
                 Timestamp = DateTime.Now,
-                IsNew = true
+                IsNew = true,
+                IsSystemMessage = isSystemMessage
             });
             window.Repaint();
         }
@@ -53,13 +52,12 @@ namespace AICodingAssistant.Editor
         private string GetChatHistoryAsString()
         {
             var sb = new StringBuilder();
-            // Send a limited amount of history to keep prompts concise
             int historyLimit = 10;
-            var relevantHistory = chatHistory.Count > historyLimit 
-                ? chatHistory.GetRange(chatHistory.Count - historyLimit, historyLimit) 
+            var relevantHistory = chatHistory.Count > historyLimit
+                ? chatHistory.GetRange(chatHistory.Count - historyLimit, historyLimit)
                 : chatHistory;
 
-            foreach(var msg in relevantHistory)
+            foreach (var msg in relevantHistory)
             {
                 sb.AppendLine($"{(msg.IsUser ? "User" : "AI")}: {msg.Content}");
             }

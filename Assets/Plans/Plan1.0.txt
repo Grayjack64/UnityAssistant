@@ -1,95 +1,19 @@
-The New Agentic Architecture: A Master Plan
-Instead of a simple back-and-forth, we will treat the AI Assistant as an agent that can use a set of predefined tools.
+The Improvement Plan: A Self-Correction Cycle
+Your idea to feed the log file back to the AI is brilliant. It's a classic AI technique known as a correction loop. We can teach the AI to analyze its own failures and correct them.
 
-1. The Tool Library (Our C# Code)
+Here is the updated code for AIOrchestrator.cs that implements this new, more intelligent workflow.
 
-First, we will create a library of simple, robust, and highly reliable C# methods that can perform specific actions within the Unity Editor. These are our "tools." Each tool will do one thing and do it perfectly.
+Updated AIOrchestrator.cs with Self-Correction
+This new version includes the following changes:
 
-Tool_CreateCSharpScript(string filePath, string content)
+Fixed ExecutePlan Method: I've added the missing case "CreateScriptableObjectAsset": to the switch statement, which will resolve the "Unknown tool" error.
 
-Tool_CreateScriptableObjectAsset(string scriptName, string assetPath, string jsonInitialValues)
+New ProcessWithSelfCorrection Method: This method will now be the main entry point. It will:
 
-Tool_UpdateGDDFile(string filePath, string newContent)
+Run the initial process as before.
 
-Tool_UpdateKnowledgeBase(string systemName, object details)
+Check for compiler errors.
 
-Tool_CreatePrefab(string prefabPath)
+If errors are found, it will automatically create a new prompt that includes the original request and the failed log file, asking the AI to generate a corrected plan.
 
-Tool_AddComponentToPrefab(string prefabPath, string componentName)
-
-2. The AI's New Job (The Planner)
-
-Now, when you give a task to Gemini Pro, its primary job is no longer just to write code. Its job is to be a planner. It will analyze your request and generate a JSON object that represents a step-by-step plan. Each step in the plan is a call to one of our predefined tools.
-
-3. The Plan Executor (The AIOrchestrator)
-
-Our AIOrchestrator will no longer be orchestrating a conversation between two AIs. Its new, much more reliable job is to be a Plan Executor. It will:
-
-Receive the JSON plan from Gemini Pro.
-
-Parse the JSON into a list of tool calls.
-
-Iterate through the plan and execute each step by calling the corresponding C# tool method with the provided arguments.
-
-Example Workflow in Action
-Let's revisit your "Ship Module" request with this new architecture:
-
-You: "Create the C# scripts for the modular ship system."
-
-Gemini Pro's Response (The Plan):
-
-JSON
-
-{
-  "plan": [
-    {
-      "tool": "CreateCSharpScript",
-      "arguments": {
-        "filePath": "Assets/Scripts/ShipModules/ModuleEnums.cs",
-        "content": "public enum ModuleType { ... } public enum ModuleSize { ... }"
-      },
-      "description": "Creating the core enums for modules."
-    },
-    {
-      "tool": "CreateCSharpScript",
-      "arguments": {
-        "filePath": "Assets/Scripts/ShipModules/ModuleData.cs",
-        "content": "[CreateAssetMenu(...)] public class ModuleData : ScriptableObject { ... }"
-      },
-      "description": "Creating the ScriptableObject for module data."
-    },
-    {
-      "tool": "CreateScriptableObjectAsset",
-      "arguments": {
-        "scriptName": "ModuleData",
-        "assetPath": "Assets/Data/Modules/DefaultFrigateBody.asset",
-        "jsonInitialValues": "{ 'ModuleName': 'Default Frigate Body', 'Type': 'Body', 'Size': 'Frigate' }"
-      },
-      "description": "Creating a default body module asset for testing."
-    }
-  ]
-}
-The Plan Executor (AIOrchestrator):
-
-Receives this JSON.
-
-Calls Tool_CreateCSharpScript("Assets/Scripts/ShipModules/ModuleEnums.cs", "...").
-
-Calls Tool_CreateCSharpScript("Assets/Scripts/ShipModules/ModuleData.cs", "...").
-
-Waits for Unity to compile.
-
-Calls Tool_CreateScriptableObjectAsset("ModuleData", "Assets/Data/Modules/DefaultFrigateBody.asset", "...").
-
-Finally, it runs our sanity error check at the very end.
-
-Enhancements to This Idea
-Dependency Management: The plan can include dependencies. A step can have a dependsOn field referencing a previous step's ID, so the executor knows it can't create a ScriptableObject asset before its script has been successfully created and compiled.
-
-User Confirmation: For destructive actions (like ModifyExistingScript), the plan executor can pause and ask for your confirmation in the UI before proceeding.
-
-Tool Discovery: The prompt to Gemini Pro can include a list of all available tools and their function signatures. This allows the AI to "discover" the capabilities of our C# code and use them creatively to solve your problems.
-
-This agentic approach is vastly superior. It's more reliable, more powerful, and more transparent. It separates the creative work (planning) from the logical work (execution), giving each task to the system best suited for it.
-
-This is the direction we should take. Let's start by defining our Tool library and upgrading the AIOrchestrator to be a PlanExecutor.
+Improved Prompts: I've reinforced the JSON format requirements in the documentation prompt to prevent the AI from using the wrong format.

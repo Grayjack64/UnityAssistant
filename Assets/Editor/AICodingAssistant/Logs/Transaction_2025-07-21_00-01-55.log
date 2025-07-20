@@ -1,0 +1,173 @@
+==================================================
+Transaction started at: 21.7.2025 г. 0:01:55
+==================================================
+
+########## USER PROMPT ##########
+Create needed .cs and scriptable objects for the system that will allow the following = The ship will be assembled from several modules - 
+	Wings, 
+	Weapon,
+	Device,
+	Engine,
+	Body, 
+	Bow,
+	Ammo. All modules will have 3 types of sizes
+ - Frigate ,
+	Cruiser, 
+	Battleship . 
+Each module size can be connected with corresponding size only. Each module will have a specific hard point where it will be connected with other modules. Each module will have specific hardpoints for items installations, separate from the hard points for connecting to other modules. .   Example - Player starts with a body, that have 2 wings hard point and one tail hardpoint. Each modules can be equipped with items. Each module can provide any of the core stats for the ship:
+ Hull, repair speed, max Power , PowerRechargeSpeed, CPU, Speed, Turn Speed, Shields, Accuracy, Damage, Money, Ship Name. 
+--------------------------------------------------
+
+########## AGENTIC PROMPT SENT TO AI ##########
+You are an expert Unity development agent. Your task is to analyze a user's request and create a step-by-step plan to fulfill it using a predefined set of tools.
+Your response MUST be a single, raw JSON object that strictly adheres to the provided `ActionPlan` schema. Do not include any conversational text or Markdown fences. Your entire response must be only the JSON object.
+Here is an example of the required JSON format, using the keys 'plan', 'tool', 'arguments', and 'description':
+```json
+{
+  "plan": [
+    {
+      "tool": "CreateCSharpScript",
+      "arguments": {
+        "filePath": "Assets/Scripts/MyScript.cs",
+        "content": "public class MyScript { }"
+      },
+      "description": "Create the main script.",
+    }
+  ]
+}
+```
+
+--- AVAILABLE TOOLS ---
+Tool: CreateCSharpScript
+Description: Creates a new C# script file in the project. Use this for all new classes.
+Arguments:
+  - filePath (String)
+  - content (String)
+
+Tool: CreateScriptableObjectAsset
+Description: Creates a new ScriptableObject asset from an existing script.
+Arguments:
+  - scriptName (String)
+  - assetPath (String)
+
+Tool: ReadFile
+Description: Reads the entire content of an existing text file.
+Arguments:
+  - filePath (String)
+
+Tool: UpdateSystemGDD
+Description: Finds or creates a Game Design Document for a specific system and appends new content to it.
+Arguments:
+  - systemName (String)
+  - content (String)
+
+Tool: UpdateFile
+Description: Overwrites an existing file with new content. Use this for updating the knowledge base, but prefer 'UpdateSystemGDD' for Game Design Documents.
+Arguments:
+  - filePath (String)
+  - newContent (String)
+
+
+
+--- CHAT HISTORY ---
+User: Create needed .cs and scriptable objects for the system that will allow the following = The ship will be assembled from several modules - 
+	Wings, 
+	Weapon,
+	Device,
+	Engine,
+	Body, 
+	Bow,
+	Ammo. All modules will have 3 types of sizes
+ - Frigate ,
+	Cruiser, 
+	Battleship . 
+Each module size can be connected with corresponding size only. Each module will have a specific hard point where it will be connected with other modules. Each module will have specific hardpoints for items installations, separate from the hard points for connecting to other modules. .   Example - Player starts with a body, that have 2 wings hard point and one tail hardpoint. Each modules can be equipped with items. Each module can provide any of the core stats for the ship:
+ Hull, repair speed, max Power , PowerRechargeSpeed, CPU, Speed, Turn Speed, Shields, Accuracy, Damage, Money, Ship Name. 
+
+
+--- USER'S CURRENT REQUEST ---
+Create needed .cs and scriptable objects for the system that will allow the following = The ship will be assembled from several modules - 
+	Wings, 
+	Weapon,
+	Device,
+	Engine,
+	Body, 
+	Bow,
+	Ammo. All modules will have 3 types of sizes
+ - Frigate ,
+	Cruiser, 
+	Battleship . 
+Each module size can be connected with corresponding size only. Each module will have a specific hard point where it will be connected with other modules. Each module will have specific hardpoints for items installations, separate from the hard points for connecting to other modules. .   Example - Player starts with a body, that have 2 wings hard point and one tail hardpoint. Each modules can be equipped with items. Each module can provide any of the core stats for the ship:
+ Hull, repair speed, max Power , PowerRechargeSpeed, CPU, Speed, Turn Speed, Shields, Accuracy, Damage, Money, Ship Name. 
+
+--- YOUR TASK ---
+Generate the JSON `ActionPlan` now, strictly following the format provided in the example.
+
+--------------------------------------------------
+
+########## RAW AI PLAN RESPONSE ##########
+```json
+{
+  "plan": [
+    {
+      "tool": "CreateCSharpScript",
+      "arguments": {
+        "filePath": "Assets/Scripts/ShipModule.cs",
+        "content": "using UnityEngine;\nusing System.Collections.Generic;\n\npublic enum ModuleSize { Frigate, Cruiser, Battleship }\n\npublic enum HardpointType { Wing, Tail, Weapon, Device, Engine, Bow, Ammo }\n\n[System.Serializable]\npublic class Hardpoint\n{\n    public HardpointType type;\n    public ModuleSize size;\n}\n\n[CreateAssetMenu(fileName = \"ShipModule\", menuName = \"Ship/Module\", order = 1)]\npublic class ShipModule : ScriptableObject\n{\n    public string moduleName;\n    public ModuleSize size;\n    public List<Hardpoint> connectionHardpoints;\n    public List<Hardpoint> itemHardpoints;\n\n    public float hull;\n    public float repairSpeed;\n    public float maxPower;\n    public float powerRechargeSpeed;\n    public float cpu;\n    public float speed;\n    public float turnSpeed;\n    public float shields;\n    public float accuracy;\n    public float damage;\n    public float money;\n}"
+      },
+      "description": "Create ShipModule ScriptableObject script to define module properties."
+    },
+    {
+      "tool": "CreateCSharpScript",
+      "arguments": {
+        "filePath": "Assets/Scripts/Ship.cs",
+        "content": "using UnityEngine;\nusing System.Collections.Generic;\n\npublic class Ship : MonoBehaviour\n{\n    public ShipModule body;\n    public List<ShipModule> attachedModules = new List<ShipModule>();\n\n    // Calculated stats\n    public float totalHull;\n    public float totalRepairSpeed;\n    // ... other stats\n\n    void UpdateStats()\n    {\n        // Calculate total stats based on attached modules\n    }\n}"
+      },
+      "description": "Create Ship script to manage modules and calculate stats."
+    },
+    {
+      "tool": "CreateCSharpScript",
+      "arguments": {
+        "filePath": "Assets/Scripts/ShipItem.cs",
+        "content": "using UnityEngine;\n\n[CreateAssetMenu(fileName = \"ShipItem\", menuName = \"Ship/Item\", order = 2)]\npublic class ShipItem : ScriptableObject\n{\n    public string itemName;\n    public HardpointType hardpointType;\n\n    // Item stats\n    // ...\n}"
+      },
+      "description": "Create ShipItem ScriptableObject script to define item properties."
+    },
+    {
+      "tool": "UpdateSystemGDD",
+      "arguments": {
+        "systemName": "ShipModuleSystem",
+        "content": "Ship modules are defined by the ShipModule ScriptableObject. Each module has connection hardpoints and item hardpoints.  ShipModule sizes must match for connections. Stats are aggregated on the Ship component."
+      },
+      "description": "Document the Ship Module System in the GDD."
+    }
+  ]
+}
+```
+--------------------------------------------------
+
+--- EXECUTING TOOL: CreateCSharpScript ---
+{
+  "filePath": "Assets/Scripts/ShipModule.cs",
+  "content": "using UnityEngine;\nusing System.Collections.Generic;\n\npublic enum ModuleSize { Frigate, Cruiser, Battleship }\n\npublic enum HardpointType { Wing, Tail, Weapon, Device, Engine, Bow, Ammo }\n\n[System.Serializable]\npublic class Hardpoint\n{\n    public HardpointType type;\n    public ModuleSize size;\n}\n\n[CreateAssetMenu(fileName = \"ShipModule\", menuName = \"Ship/Module\", order = 1)]\npublic class ShipModule : ScriptableObject\n{\n    public string moduleName;\n    public ModuleSize size;\n    public List<Hardpoint> connectionHardpoints;\n    public List<Hardpoint> itemHardpoints;\n\n    public float hull;\n    public float repairSpeed;\n    public float maxPower;\n    public float powerRechargeSpeed;\n    public float cpu;\n    public float speed;\n    public float turnSpeed;\n    public float shields;\n    public float accuracy;\n    public float damage;\n    public float money;\n}"
+}
+------------------------
+
+--- EXECUTING TOOL: CreateCSharpScript ---
+{
+  "filePath": "Assets/Scripts/Ship.cs",
+  "content": "using UnityEngine;\nusing System.Collections.Generic;\n\npublic class Ship : MonoBehaviour\n{\n    public ShipModule body;\n    public List<ShipModule> attachedModules = new List<ShipModule>();\n\n    // Calculated stats\n    public float totalHull;\n    public float totalRepairSpeed;\n    // ... other stats\n\n    void UpdateStats()\n    {\n        // Calculate total stats based on attached modules\n    }\n}"
+}
+------------------------
+
+--- EXECUTING TOOL: CreateCSharpScript ---
+{
+  "filePath": "Assets/Scripts/ShipItem.cs",
+  "content": "using UnityEngine;\n\n[CreateAssetMenu(fileName = \"ShipItem\", menuName = \"Ship/Item\", order = 2)]\npublic class ShipItem : ScriptableObject\n{\n    public string itemName;\n    public HardpointType hardpointType;\n\n    // Item stats\n    // ...\n}"
+}
+------------------------
+
+==================================================
+Transaction ended at: 21.7.2025 г. 0:02:05
+==================================================
+

@@ -9,6 +9,6 @@ namespace AICodingAssistant.Editor
         public string Content { get; set; }
         public DateTime Timestamp { get; set; }
         public bool IsNew { get; set; }
-        public bool IsSystemMessage { get; set; }
+        public bool IsSystemMessage { get; set; } // Add this new property
     }
 }
